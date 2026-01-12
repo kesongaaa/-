@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>神秘塔罗 - 手势互动</title>
+    <!-- 引入 MediaPipe 库 -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.js" crossorigin="anonymous"></script>
+    <style>
+        /* --- 1. 基础样式与氛围 --- */
+        :root {
+            --bg-color: #050505;
+            --accent-gold: #d4af37;
+            --card-width: 140px;
+            --card-height: 240px;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-color);
+            background-image: 
+                radial-gradient(white, rgba(255,255,255,.2) 2px, transparent 3px),
+                radial-gradient(white, rgba(255,255,255,.15) 1px, transparent 2px),
+                radial-gradient(white, rgba(255,255,255,.1) 2px, transparent 3px);
+            background-size: 550px 550px, 350px 350px, 250px 250px;
+            background-position: 0 0, 40px 60px, 130px 270px;
+            color: #fff;
+            font-family: 'Times New Roman', serif;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            user-select: none;
+        }
+
+        /* --- 2. UI 层级 --- */
+        #loading-screen, #intro-screen, #game-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            transition: opacity 1s ease;
+            z-index: 10;
+        }
+
+        .hidden {
+            opacity: 0;
+            pointer-events: none;
+            z-index: -1 !important;
+        }
+
+        h1 {
+            font-size: 3rem;
+            color: var(--accent-gold);
+            text-shadow: 0 0 10px rgba(212, 175, 55, 0.5);
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        p {
+            font-size: 1.2rem;
+            opacity: 0.8;
+            margin-bottom: 40px;
+        }
+
+        button {
+            background: transparent;
+            border: 2px solid var(--accent-gold);
+            color: var(--accent-gold);
+            padding: 15px 40px;
+            font-size: 1.5rem;
+            cursor: pointer;
+            font-family: inherit;
+            transition: all 0.3s;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        button:hover {
+            background: var(--accent-gold);
+            color: #000;
+            box-shadow: 0 0 20px var(--accent-gold);
+        }
+
+        /* --- 3. 摄像头与调试 (隐藏或角落显示) --- */
+        #webcam {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            width: 160px;
+            height: 120px;
+            transform: scaleX(-1); /* 镜像 */
+            opacity: 0.3; /* 半透明，不干扰视觉 */
+            border: 1px solid var(--accent-gold);
+            border-radius: 8px;
+            z-index: 5;
+        }
+
+        /* --- 4. 魔法光标 (跟随手势) --- */
+        #magic-cursor {
+            position: fixed;
+            width: 30px;
+            height: 30px;
+            border: 2px solid var(--accent-gold);
+            border-radius: 50%;
+            pointer-events: none;
+            transform: translate(-50%, -50%);
+            box-shadow: 0 0 15px var(--accent-gold), inset 0 0 10px var(--accent-gold);
+            z-index: 100;
+            transition: width 0.2s, height 0.2s; /* 捏合动画 */
+            display: none; /* 初始隐藏 */
+        }
+        
+        #magic-cursor.pinching {
+            background-color: var(--accent-gold);
+            width: 15px;
+            height: 15px;
+        }
+
+        /* --- 5. 进度圈 (悬停反馈) --- */
+        .progress-ring {
+            position: absolute;
+            width: 60px;
+            height: 60px;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            display: none;
+        }
+        
+        /* --- 6. 卡牌区域 --- */
+        #card-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 20px;
+            perspective: 1000px;
+            width: 90%;
+            max-width: 1200px;
+            flex-wrap: wrap;
+        }
+
+        .card-wrapper {
+            width: var(--card-width);
+            height: var(--card-height);
+            position: relative;
+            transform-style: preserve-3d;
+            transition: transform 0.8s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            cursor: pointer;
+        }
+
+        .card-wrapper.flipped {
+            transform: rotateY(180deg);
+        }
+
+        .card-face {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            backface-visibility: hidden;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+            border: 2px solid #333;
+        }
+
+        /* 卡背 */
+        .card-back {
+            background: linear-gradient(135deg, #1a1a1a 0%, #2c2c2c 100%);
+            border-color: var(--accent-gold);
+        }
+        .card-back::after {
+            content: '✦';
+            font-size: 3rem;
+            color: var(--accent-gold);
+        }
+
+        /* 卡面 */
+        .card-front {
+            background: #eee;
+            color: #111;
+            transform: rotateY(180deg);
+            flex-direction: column;
+            border-color: #fff;
+        }
+        .card-front img {
+            width: 80%;
+            height: 60%;
+            object-fit: cover;
+            margin-bottom: 10px;
+        }
+        .card-front h3 {
+            margin: 0;
+            font-size: 1rem;
+            text-align: center;
+            font-family: serif;
+        }
+
+        /* --- 7. 粒子特效画布 --- */
+        #particle-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 50;
+        }
+
+        /* 响应式调整 */
+        @media (max-width: 768px) {
+            :root {
+                --card-width: 90px;
+                --card-height: 150px;
+            }
+            #card-container {
+                gap: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 光标 -->
+    <div id="magic-cursor"></div>
+
+    <!-- 粒子特效 -->
+    <canvas id="particle-canvas"></canvas>
+
+    <!-- 摄像头 (用于调试及MediaPipe输入) -->
+    <video id="webcam" autoplay playsinline></video>
+
+    <!-- 1. 加载界面 -->
+    <div id="loading-screen">
+        <h1>🔮</h1>
+        <p>正在加载神秘塔罗牌阵...</p>
+    </div>
+
+    <!-- 2. 引导界面 -->
+    <div id="intro-screen" class="hidden">
+        <h1>命运之轮</h1>
+        <p>请允许使用摄像头，并举起您的手。</p>
+        <p>用食指控制光标，悬停或捏合来翻开卡牌。</p>
+        <button id="start-btn">开始抽卡</button>
+    </div>
+
+    <!-- 3. 游戏主界面 -->
+    <div id="game-screen" class="hidden">
+        <h2 style="position: absolute; top: 10%; width: 100%; text-align: center; color: var(--accent-gold);">请用手势选择您的卡牌</h2>
+        <div id="card-container">
+            <!-- 卡牌将由JS生成 -->
+        </div>
+    </div>
+
+    <script type="module">
+        import { FilesetResolver, HandLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.js";
+
+        /* --- 配置与状态 --- */
+        const tarotData = [
+            { name: "愚者", imgUrl: "https://images.unsplash.com/photo-1634914757361-b84497cc3029?q=80&w=200&auto=format&fit=crop", desc: "新的开始，自由" },
+            { name: "力量", imgUrl: "https://images.unsplash.com/photo-1596707323569-b57d6d396956?q=80&w=200&auto=format&fit=crop", desc: "勇气，耐心" },
+            { name: "死神", imgUrl: "https://images.unsplash.com/photo-1515286105367-7b243b46985e?q=80&w=200&auto=format&fit=crop", desc: "结束，重生" },
+            { name: "月亮", imgUrl: "https://images.unsplash.com/photo-1532960401447-7dd05bef20b0?q=80&w=200&auto=format&fit=crop", desc: "潜意识，幻觉" },
+            { name: "战车", imgUrl: "https://images.unsplash.com/photo-1601026040854-44a69145942f?q=80&w=200&auto=format&fit=crop", desc: "意志力，胜利" }
+        ];
+
+        let handLandmarker = undefined;
+        let webcamRunning = false;
+        let lastVideoTime = -1;
+        
+        // DOM 元素
+        const video = document.getElementById("webcam");
+        const cursor = document.getElementById("magic-cursor");
+        const cardContainer = document.getElementById("card-container");
+        const particleCanvas = document.getElementById("particle-canvas");
+        const ctx = particleCanvas.getContext('2d');
+
+        // 交互状态
+        let hoverStartTime = 0;
+        let hoveredCardIndex = -1;
+        const HOVER_THRESHOLD = 1000; // 悬停1秒触发
+        const PINCH_THRESHOLD = 0.05; // 捏合距离阈值
+
+        // 初始化
+        async function createHandLandmarker() {
+            const vision = await FilesetResolver.forVisionTasks(
+                "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm"
+            );
+            handLandmarker = await HandLandmarker.createFromOptions(vision, {
+                baseOptions: {
+                    modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
+                    delegate: "GPU"
+                },
+                runningMode: "VIDEO",
+                numHands: 1
+            });
+            
+            document.getElementById('loading-screen').classList.add('hidden');
+            document.getElementById('intro-screen').classList.remove('hidden');
+        }
+
+        createHandLandmarker();
+
+        /* --- 游戏逻辑 --- */
+        
+        // 1. 生成卡牌
+        function initCards() {
+            cardContainer.innerHTML = '';
+            tarotData.forEach((card, index) => {
+                const el = document.createElement('div');
+                el.className = 'card-wrapper';
+                el.dataset.index = index;
+                el.innerHTML = `
+                    <div class="card-face card-back"></div>
+                    <div class="card-face card-front">
+                        <img src="${card.imgUrl}" alt="${card.name}">
+                        <h3>${card.name}</h3>
+                    </div>
+                `;
+                cardContainer.appendChild(el);
+            });
+        }
+
+        // 2. 开始游戏
+        document.getElementById('start-btn').addEventListener('click', async () => {
+            // 请求摄像头
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                video.srcObject = stream;
+                video.addEventListener("loadeddata", predictWebcam);
+                webcamRunning = true;
+                
+                initCards();
+                resizeCanvas();
+                
+                document.getElementById('intro-screen').classList.add('hidden');
+                document.getElementById('game-screen').classList.remove('hidden');
+                cursor.style.display = "block";
+                
+            } catch (err) {
+                alert("需要摄像头权限才能进行手势互动！");
+                console.error(err);
+            }
+        });
+
+        // 3. 核心循环：手势识别与交互
+        async function predictWebcam() {
+            if (!handLandmarker) return;
+
+            // 保持Canvas尺寸
+            if (video.videoWidth !== particleCanvas.width) {
+                resizeCanvas();
+            }
+
+            let startTimeMs = performance.now();
+            if (lastVideoTime !== video.currentTime) {
+                lastVideoTime = video.currentTime;
+                const results = handLandmarker.detectForVideo(video, startTimeMs);
+
+                if (results.landmarks && results.landmarks.length > 0) {
+                    const landmarks = results.landmarks[0];
+                    
+                    // 获取食指指尖(8)和拇指指尖(4)坐标
+                    const indexTip = landmarks[8];
+                    const thumbTip = landmarks[4];
+                    
+                    // 映射到屏幕坐标 (注意 webcam 需要镜像)
+                    // x: 1 - x 因为需要镜像翻转
+                    const screenX = (1 - indexTip.x) * window.innerWidth;
+                    const screenY = indexTip.y * window.innerHeight;
+
+                    // 更新光标位置
+                    cursor.style.left = `${screenX}px`;
+                    cursor.style.top = `${screenY}px`;
+
+                    // 计算捏合距离 (简单的欧几里得距离)
+                    const pinchDist = Math.sqrt(
+                        Math.pow(indexTip.x - thumbTip.x, 2) + 
+                        Math.pow(indexTip.y - thumbTip.y, 2)
+                    );
+
+                    const isPinching = pinchDist < PINCH_THRESHOLD;
+                    if(isPinching) {
+                        cursor.classList.add('pinching');
+                    } else {
+                        cursor.classList.remove('pinching');
+                    }
+
+                    // 碰撞检测与触发
+                    checkInteraction(screenX, screenY, isPinching);
+                } else {
+                    // 没有检测到手
+                    cursor.style.display = 'none';
+                }
+            }
+
+            // 更新粒子动画
+            updateParticles();
+
+            if (webcamRunning) {
+                window.requestAnimationFrame(predictWebcam);
+            }
+        }
+
+        function checkInteraction(x, y, isPinching) {
+            cursor.style.display = 'block';
+            
+            // 获取所有卡牌元素
+            const cards = document.querySelectorAll('.card-wrapper');
+            let foundHover = false;
+
+            cards.forEach(card => {
+                const rect = card.getBoundingClientRect();
+                const isOver = x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+                
+                if (isOver && !card.classList.contains('flipped')) {
+                    foundHover = true;
+                    const index = parseInt(card.dataset.index);
+
+                    // 增加边框高亮暗示
+                    card.style.boxShadow = "0 0 25px var(--accent-gold)";
+
+                    // 逻辑 A: 捏合立即触发
+                    if (isPinching) {
+                        flipCard(card);
+                        return;
+                    }
+
+                    // 逻辑 B: 悬停计时触发
+                    if (hoveredCardIndex !== index) {
+                        hoveredCardIndex = index;
+                        hoverStartTime = performance.now();
+                    } else {
+                        if (performance.now() - hoverStartTime > HOVER_THRESHOLD) {
+                            flipCard(card);
+                        }
+                    }
+                } else {
+                    card.style.boxShadow = ""; // 移除高亮
+                }
+            });
+
+            if (!foundHover) {
+                hoveredCardIndex = -1;
+                hoverStartTime = 0;
+            }
+        }
+
+        function flipCard(cardElement) {
+            if (cardElement.classList.contains('flipped')) return;
+            
+            cardElement.classList.add('flipped');
+            
+            // 触发粒子
+            const rect = cardElement.getBoundingClientRect();
+            const centerX = rect.left + rect.width / 2;
+            const centerY = rect.top + rect.height / 2;
+            spawnParticles(centerX, centerY);
+
+            // 重置状态防止连续触发
+            hoveredCardIndex = -1; 
+        }
+
+        /* --- 粒子特效系统 --- */
+        let particles = [];
+
+        function resizeCanvas() {
+            particleCanvas.width = window.innerWidth;
+            particleCanvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+
+        function spawnParticles(x, y) {
+            for (let i = 0; i < 50; i++) {
+                particles.push({
+                    x: x,
+                    y: y,
+                    vx: (Math.random() - 0.5) * 10,
+                    vy: (Math.random() - 0.5) * 10,
+                    life: 1.0,
+                    color: `hsl(${45 + Math.random() * 20}, 100%, 70%)` // 金色系
+                });
+            }
+        }
+
+        function updateParticles() {
+            ctx.clearRect(0, 0, particleCanvas.width, particleCanvas.height);
+            
+            for (let i = particles.length - 1; i >= 0; i--) {
+                let p = particles[i];
+                p.x += p.vx;
+                p.y += p.vy;
+                p.vy += 0.1; // 重力
+                p.life -= 0.02;
+
+                if (p.life <= 0) {
+                    particles.splice(i, 1);
+                } else {
+                    ctx.globalAlpha = p.life;
+                    ctx.fillStyle = p.color;
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+            ctx.globalAlpha = 1.0;
+        }
+
+    </script>
+</body>
+</html>
