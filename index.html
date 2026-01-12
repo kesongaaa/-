@@ -1,173 +1,506 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-<meta charset="UTF-8">
-<title>Web Hand Gesture Interaction</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>神秘塔罗 - 手势驱动</title>
+    <!-- 引入 MediaPipe Hands 和 Camera Utils -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
 
-<style>
-body {
-  margin: 0;
-  background: #0b0f14;
-  overflow: hidden;
-  font-family: sans-serif;
-  color: white;
-}
+    <style>
+        /* --- 基础样式与暗黑氛围 --- */
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: radial-gradient(circle at center, #1a0b2e 0%, #000000 100%);
+            font-family: 'Cinzel', serif; /* 类似衬线字体 */
+            color: #e0e0e0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            perspective: 1000px;
+        }
 
-video {
-  position: fixed;
-  right: 20px;
-  bottom: 20px;
-  width: 220px;
-  border-radius: 12px;
-  opacity: 0.85;
-}
+        /* 摄像头预览（用于调试，实际可隐藏或缩小） */
+        .input_video {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            width: 160px;
+            height: 120px;
+            border: 2px solid #444;
+            opacity: 0.3;
+            transform: scaleX(-1); /* 镜像翻转 */
+            z-index: 100;
+        }
 
-#cursor {
-  position: fixed;
-  width: 18px;
-  height: 18px;
-  background: #00ffd5;
-  border-radius: 50%;
-  transform: translate(-50%, -50%);
-  pointer-events: none;
-}
+        /* 提示文字 */
+        #status-text {
+            position: absolute;
+            top: 10%;
+            font-size: 24px;
+            letter-spacing: 2px;
+            text-shadow: 0 0 10px #b19cd9;
+            opacity: 0.8;
+            pointer-events: none;
+            transition: opacity 0.5s;
+        }
 
-#box {
-  position: absolute;
-  left: 40%;
-  top: 40%;
-  width: 200px;
-  height: 120px;
-  background: rgba(0,255,213,0.15);
-  border: 2px solid #00ffd5;
-  border-radius: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  user-select: none;
-}
+        /* --- 卡牌容器 --- */
+        #card-container {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+            justify-content: center;
+            transform-style: preserve-3d;
+            height: 300px;
+            width: 80%;
+        }
 
-#hoverBtn {
-  position: absolute;
-  top: 70%;
-  left: 45%;
-  padding: 20px 40px;
-  font-size: 18px;
-  border-radius: 12px;
-  border: none;
-}
-</style>
+        /* --- 卡牌样式 (3D翻转) --- */
+        .card {
+            width: 160px;
+            height: 260px;
+            position: relative;
+            transform-style: preserve-3d;
+            transition: transform 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.27), box-shadow 0.3s;
+            cursor: pointer;
+            opacity: 0; /* 初始隐藏，挥手后显示 */
+            transform: translateY(100px); 
+        }
+
+        /* 卡牌展开动画 */
+        .card.active {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        
+        /* 选中态 */
+        .card.hovered {
+            transform: translateY(-20px) scale(1.05);
+            box-shadow: 0 0 25px rgba(189, 147, 249, 0.6);
+        }
+        
+        /* 翻转态 */
+        .card.flipped {
+            transform: rotateY(180deg) scale(1.1);
+        }
+
+        /* 卡背与卡面 */
+        .card-face {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            backface-visibility: hidden;
+            border-radius: 10px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+        }
+
+        .card-back {
+            background: linear-gradient(135deg, #2c2c2c, #111);
+            border: 2px solid #444;
+            color: rgba(255,255,255,0.2);
+            font-size: 40px;
+        }
+        /* 待激活状态的亮白色样式 */
+        .card-back::after {
+            content: '✦';
+            font-size: 50px;
+            color: #fff;
+            text-shadow: 0 0 20px #fff;
+        }
+
+        .card-front {
+            background: linear-gradient(to bottom, #2b1055, #7597de);
+            transform: rotateY(180deg);
+            border: 2px solid #ffd700;
+            color: white;
+            padding: 10px;
+            text-align: center;
+        }
+
+        .tarot-name {
+            margin-top: 10px;
+            font-weight: bold;
+            font-size: 18px;
+            text-transform: uppercase;
+        }
+
+        .tarot-img-placeholder {
+            width: 80px;
+            height: 80px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 50%;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 30px;
+        }
+
+        /* --- 手势光标 --- */
+        #cursor {
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            border: 2px solid #00ffff;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none; /* 穿透点击 */
+            z-index: 500;
+            box-shadow: 0 0 10px #00ffff;
+            transition: width 0.1s, height 0.1s, background-color 0.1s;
+        }
+
+        /* 捏合时的光标样式 */
+        #cursor.clicking {
+            background-color: #00ffff;
+            width: 15px;
+            height: 15px;
+        }
+
+        /* --- 粒子画布 --- */
+        #particle-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 400;
+        }
+    </style>
 </head>
-
 <body>
 
-<video id="video" autoplay playsinline></video>
-<div id="cursor"></div>
-<div id="box">🤏 拖我 / 缩放我</div>
-<button id="hoverBtn">✋ 悬停 2 秒</button>
+    <!-- 隐藏的 Video 元素，用于 MediaPipe 读取 -->
+    <video class="input_video"></video>
+    
+    <!-- 状态提示 -->
+    <div id="status-text">请挥手以激活卡牌...</div>
 
-<!-- MediaPipe -->
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <!-- 光标 -->
+    <div id="cursor"></div>
+
+    <!-- 粒子特效层 -->
+    <canvas id="particle-canvas"></canvas>
+
+    <!-- 游戏区 -->
+    <div id="card-container">
+        <!-- 卡牌由 JS 生成 -->
+    </div>
 
 <script>
-const video = document.getElementById("video");
-const cursor = document.getElementById("cursor");
-const box = document.getElementById("box");
-const hoverBtn = document.getElementById("hoverBtn");
+    // ================= 配置与变量 =================
+    const videoElement = document.getElementsByClassName('input_video')[0];
+    const cursor = document.getElementById('cursor');
+    const statusText = document.getElementById('status-text');
+    const cardContainer = document.getElementById('card-container');
+    const particleCanvas = document.getElementById('particle-canvas');
+    const ctxParticles = particleCanvas.getContext('2d');
 
-let pinch = false;
-let lastX = 0, lastY = 0;
-let lastPinchDist = 0;
-let hoverStart = null;
-let bgToggle = false;
+    // 塔罗牌数据
+    const tarotData = [
+        { name: "力量", en: "Strength", icon: "🦁" },
+        { name: "愚者", en: "The Fool", icon: "🃏" },
+        { name: "死神", en: "Death", icon: "💀" },
+        { name: "宝剑骑士", en: "Knight of Swords", icon: "⚔️" },
+        { name: "女皇", en: "The Empress", icon: "👑" }
+    ];
 
-// 摄像头
-navigator.mediaDevices.getUserMedia({ video: true })
-  .then(stream => video.srcObject = stream);
+    let gameState = 'IDLE'; // IDLE, ACTIVE, REVEALED
+    let cursorX = window.innerWidth / 2;
+    let cursorY = window.innerHeight / 2;
+    // 用于平滑光标
+    let targetX = cursorX;
+    let targetY = cursorY;
 
-// MediaPipe Hands
-const hands = new Hands({
-  locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`
-});
+    // 挥手检测变量
+    let handHistory = [];
+    const WAVE_THRESHOLD = 150; // 移动距离阈值
 
-hands.setOptions({
-  maxNumHands: 1,
-  minDetectionConfidence: 0.7,
-  minTrackingConfidence: 0.7
-});
+    // 点击/捏合冷却
+    let isPinching = false;
+    let lastPinchTime = 0;
 
-hands.onResults(res => {
-  if (!res.multiHandLandmarks) return;
+    // 粒子数组
+    let particles = [];
 
-  const lm = res.multiHandLandmarks[0];
-  const index = lm[8];
-  const thumb = lm[4];
-  const palm = lm[0];
+    // ================= 初始化 =================
+    
+    // 设置 Canvas 尺寸
+    function resizeCanvas() {
+        particleCanvas.width = window.innerWidth;
+        particleCanvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
 
-  const x = index.x * window.innerWidth;
-  const y = index.y * window.innerHeight;
+    // 生成卡牌 DOM
+    function initCards() {
+        cardContainer.innerHTML = '';
+        tarotData.forEach((data, index) => {
+            const card = document.createElement('div');
+            card.className = 'card';
+            card.id = `card-${index}`;
+            
+            const back = document.createElement('div');
+            back.className = 'card-face card-back';
+            
+            const front = document.createElement('div');
+            front.className = 'card-face card-front';
+            front.innerHTML = `
+                <div class="tarot-img-placeholder">${data.icon}</div>
+                <div class="tarot-name">${data.name}</div>
+                <div style="font-size:12px; opacity:0.8">${data.en}</div>
+            `;
 
-  // 光标
-  cursor.style.left = x + "px";
-  cursor.style.top = y + "px";
+            card.appendChild(back);
+            card.appendChild(front);
+            cardContainer.appendChild(card);
+        });
+    }
+    initCards();
 
-  // 捏合
-  const pinchDist = Math.hypot(index.x - thumb.x, index.y - thumb.y);
+    // ================= 逻辑功能 =================
 
-  if (pinchDist < 0.04) {
-    if (!pinch) {
-      pinch = true;
-      lastX = x;
-      lastY = y;
-      lastPinchDist = pinchDist;
+    // 1. 线性插值 (Lerp) 实现平滑移动
+    function lerp(start, end, amt) {
+        return (1 - amt) * start + amt * end;
     }
 
-    // 拖拽
-    box.style.left = box.offsetLeft + (x - lastX) + "px";
-    box.style.top = box.offsetTop + (y - lastY) + "px";
+    // 2. 挥手检测 (简单的速度/位移检测)
+    function detectWave(landmarks) {
+        if (gameState !== 'IDLE') return;
 
-    // 缩放
-    const scale = Math.max(0.5, 1 + (lastPinchDist - pinchDist) * 6);
-    box.style.transform = `scale(${scale})`;
+        // 使用手腕 (索引 0) 的 X 坐标
+        const x = landmarks[0].x;
+        handHistory.push(x);
+        if (handHistory.length > 20) handHistory.shift();
 
-    lastX = x;
-    lastY = y;
-    lastPinchDist = pinchDist;
-  } else {
-    pinch = false;
-  }
-
-  // 悬停触发
-  const r = hoverBtn.getBoundingClientRect();
-  if (x > r.left && x < r.right && y > r.top && y < r.bottom) {
-    if (!hoverStart) hoverStart = Date.now();
-    if (Date.now() - hoverStart > 2000) {
-      hoverBtn.innerText = "✅ 已触发";
-      hoverBtn.style.background = "#00ffd5";
+        if (handHistory.length > 10) {
+            const minX = Math.min(...handHistory);
+            const maxX = Math.max(...handHistory);
+            // 如果短时间内横向移动幅度大
+            if (maxX - minX > 0.4) { 
+                startGame();
+                handHistory = []; // 重置
+            }
+        }
     }
-  } else {
-    hoverStart = null;
-  }
 
-  // 左右挥手切换背景
-  if (palm.x < 0.1) {
-    document.body.style.background = "#111";
-  }
-  if (palm.x > 0.9) {
-    document.body.style.background = "#0b0f14";
-  }
-});
+    // 3. 游戏流程控制
+    function startGame() {
+        gameState = 'ACTIVE';
+        statusText.innerText = "请通过手势移动光标，捏合手指翻牌";
+        statusText.style.top = "5%";
+        statusText.style.fontSize = "18px";
 
-const camera = new Camera(video, {
-  onFrame: async () => {
-    await hands.send({ image: video });
-  },
-  width: 640,
-  height: 480
-});
-camera.start();
+        // 卡牌入场动画
+        const cards = document.querySelectorAll('.card');
+        cards.forEach((card, index) => {
+            setTimeout(() => {
+                card.classList.add('active');
+            }, index * 100);
+        });
+    }
+
+    // 4. 处理交互 (悬停与点击)
+    function handleInteraction(x, y, isPinch) {
+        if (gameState !== 'ACTIVE') return;
+
+        // 获取光标下方的元素 (先隐藏光标自己，否则检测到的是光标div)
+        cursor.style.display = 'none'; 
+        let elemBelow = document.elementFromPoint(x, y);
+        cursor.style.display = 'block';
+
+        // 移除所有悬停效果
+        document.querySelectorAll('.card').forEach(c => c.classList.remove('hovered'));
+
+        // 查找是否在卡牌上
+        let card = elemBelow ? elemBelow.closest('.card') : null;
+
+        if (card && !card.classList.contains('flipped')) {
+            card.classList.add('hovered');
+
+            // 触发点击 (捏合)
+            if (isPinch) {
+                const now = Date.now();
+                if (now - lastPinchTime > 1000) { // 1秒防抖
+                    flipCard(card);
+                    lastPinchTime = now;
+                }
+            }
+        }
+    }
+
+    // 5. 翻卡逻辑
+    function flipCard(card) {
+        card.classList.add('flipped');
+        
+        // 粒子特效位置
+        const rect = card.getBoundingClientRect();
+        const centerX = rect.left + rect.width / 2;
+        const centerY = rect.top + rect.height / 2;
+        createExplosion(centerX, centerY);
+
+        // 检查是否全部翻开 (可选逻辑)
+        // ...
+    }
+
+    // ================= MediaPipe 设置 =================
+
+    const hands = new Hands({locateFile: (file) => {
+        return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+    }});
+
+    hands.setOptions({
+        maxNumHands: 1,
+        modelComplexity: 1,
+        minDetectionConfidence: 0.7,
+        minTrackingConfidence: 0.7
+    });
+
+    hands.onResults(onResults);
+
+    // 摄像头初始化
+    const camera = new Camera(videoElement, {
+        onFrame: async () => {
+            await hands.send({image: videoElement});
+        },
+        width: 640,
+        height: 480
+    });
+    camera.start();
+
+    // ================= 每一帧的处理逻辑 =================
+
+    function onResults(results) {
+        // 1. 获取手部数据
+        if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+            const landmarks = results.multiHandLandmarks[0];
+
+            // 2. 检测挥手 (仅在 Idle 状态)
+            detectWave(landmarks);
+
+            // 3. 计算光标位置 (使用食指指尖 ID: 8)
+            // 镜像翻转 X 坐标 (1 - x)
+            const rawX = (1 - landmarks[8].x) * window.innerWidth;
+            const rawY = landmarks[8].y * window.innerHeight;
+
+            // 平滑移动
+            targetX = rawX;
+            targetY = rawY;
+
+            // 4. 检测捏合 (食指指尖 ID: 8 与 拇指指尖 ID: 4 的距离)
+            const x1 = landmarks[8].x;
+            const y1 = landmarks[8].y;
+            const x2 = landmarks[4].x;
+            const y2 = landmarks[4].y;
+            
+            // 计算欧几里得距离
+            const distance = Math.sqrt(Math.pow(x1 - x2, 2) + Math.pow(y1 - y2, 2));
+            
+            // 阈值判断 (视摄像头距离而定，通常 0.05 左右为捏合)
+            if (distance < 0.05) {
+                cursor.classList.add('clicking');
+                isPinching = true;
+            } else {
+                cursor.classList.remove('clicking');
+                isPinching = false;
+            }
+
+        } else {
+            // 没有检测到手时
+            isPinching = false;
+        }
+    }
+
+    // 动画循环 (渲染 UI 和 粒子)
+    function animate() {
+        // 1. 更新光标 DOM 位置 (Lerp)
+        // 使 cursorX 趋向 targetX
+        cursorX = lerp(cursorX, targetX, 0.2); 
+        cursorY = lerp(cursorY, targetY, 0.2);
+
+        cursor.style.left = `${cursorX}px`;
+        cursor.style.top = `${cursorY}px`;
+
+        // 2. 交互逻辑
+        handleInteraction(cursorX, cursorY, isPinching);
+
+        // 3. 渲染粒子
+        updateParticles();
+
+        requestAnimationFrame(animate);
+    }
+    
+    // 启动动画循环
+    animate();
+
+
+    // ================= 粒子系统 (Canvas) =================
+    
+    class Particle {
+        constructor(x, y) {
+            this.x = x;
+            this.y = y;
+            const angle = Math.random() * Math.PI * 2;
+            const speed = Math.random() * 5 + 2;
+            this.vx = Math.cos(angle) * speed;
+            this.vy = Math.sin(angle) * speed;
+            this.life = 1.0; // 生命值 1.0 -> 0
+            this.decay = Math.random() * 0.02 + 0.01;
+            this.color = `hsl(${Math.random() * 60 + 200}, 100%, 70%)`; // 蓝色/紫色系
+            this.size = Math.random() * 4 + 2;
+        }
+
+        update() {
+            this.x += this.vx;
+            this.y += this.vy;
+            this.life -= this.decay;
+            this.size *= 0.95; // 变小
+        }
+
+        draw(ctx) {
+            ctx.fillStyle = this.color;
+            ctx.globalAlpha = this.life;
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.globalAlpha = 1.0;
+        }
+    }
+
+    function createExplosion(x, y) {
+        for (let i = 0; i < 30; i++) {
+            particles.push(new Particle(x, y));
+        }
+    }
+
+    function updateParticles() {
+        ctxParticles.clearRect(0, 0, particleCanvas.width, particleCanvas.height);
+        
+        for (let i = particles.length - 1; i >= 0; i--) {
+            const p = particles[i];
+            p.update();
+            p.draw(ctxParticles);
+            
+            if (p.life <= 0) {
+                particles.splice(i, 1);
+            }
+        }
+    }
+
 </script>
-
 </body>
 </html>
