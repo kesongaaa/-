@@ -3,11 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mystic Tarot - Three.js & MediaPipe</title>
+    <title>Tarot Carousel - Three.js & MediaPipe</title>
     <style>
         :root {
             --primary: #d4af37;
-            --bg: #111;
+            --bg: #050505;
             --panel-bg: rgba(0, 0, 0, 0.85);
         }
         body {
@@ -20,19 +20,14 @@
         }
         #canvas-container {
             position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
+            top: 0; left: 0; width: 100%; height: 100%;
             z-index: 1;
+            background: radial-gradient(circle at center, #1a1a2e 0%, #000000 100%);
         }
-        /* UI Overlays */
+        /* UI Layers */
         #ui-layer {
             position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
+            top: 0; left: 0; width: 100%; height: 100%;
             z-index: 2;
             pointer-events: none;
         }
@@ -46,94 +41,62 @@
             box-shadow: 0 0 15px rgba(212, 175, 55, 0.2);
             transition: opacity 0.3s;
         }
-        /* Top Info */
+        /* Status Info */
         #status-panel {
-            top: 20px;
+            top: 10%;
             left: 50%;
             transform: translateX(-50%);
             text-align: center;
-            min-width: 300px;
+            min-width: 320px;
+            opacity: 0; /* 默认隐藏，翻牌后显示 */
         }
-        #card-name {
-            font-size: 1.5em;
-            color: var(--primary);
-            margin: 0;
-            font-weight: bold;
+        #status-panel.visible { opacity: 1; }
+        #card-name { font-size: 1.8em; color: var(--primary); margin: 0; font-weight: bold; }
+        #card-meaning { font-size: 1em; margin-top: 5px; color: #ccc; }
+        
+        /* Guide Text (Bottom Center) */
+        #guide-text {
+            position: absolute;
+            bottom: 10%;
+            width: 100%;
+            text-align: center;
+            font-size: 1.2em;
+            color: rgba(255, 255, 255, 0.7);
+            text-shadow: 0 0 5px #000;
         }
-        #card-meaning {
-            font-size: 0.9em;
-            margin-top: 5px;
-            color: #ccc;
-        }
+
         /* Controls */
-        #controls {
-            bottom: 20px;
-            left: 20px;
-            font-size: 0.85em;
-        }
+        #controls { bottom: 20px; left: 20px; font-size: 0.85em; }
         #mode-toggle {
-            background: var(--primary);
-            color: #000;
-            border: none;
-            padding: 5px 10px;
-            cursor: pointer;
-            font-weight: bold;
-            margin-top: 5px;
+            background: var(--primary); color: #000; border: none;
+            padding: 5px 10px; cursor: pointer; font-weight: bold; margin-top: 5px;
         }
         /* History */
         #history-panel {
-            top: 20px;
-            right: 20px;
-            width: 250px;
-            max-height: 80vh;
-            overflow-y: auto;
+            top: 20px; right: 20px; width: 250px; max-height: 80vh; overflow-y: auto;
         }
         .history-item {
-            border-bottom: 1px solid #444;
-            padding: 8px 0;
-            font-size: 0.85em;
-            display: flex;
-            align-items: center;
+            border-bottom: 1px solid #444; padding: 8px 0; font-size: 0.85em; display: flex; align-items: center;
         }
-        .history-item img {
-            width: 30px;
-            height: 50px;
-            margin-right: 10px;
-            object-fit: cover;
-        }
-        .history-item .reversed {
-            transform: rotate(180deg);
-        }
-        .rev-tag {
-            color: #ff6b6b;
-            font-size: 0.8em;
-            margin-left: 5px;
-        }
-        /* Loading */
+        .history-item img { width: 30px; height: 50px; margin-right: 10px; object-fit: cover; }
+        .history-item .reversed { transform: rotate(180deg); }
+        
+        /* Loader */
         #loader {
-            position: fixed;
-            top: 0; left: 0; width: 100%; height: 100%;
-            background: #000;
-            z-index: 999;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            flex-direction: column;
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: #000; z-index: 999;
+            display: flex; justify-content: center; align-items: center; flex-direction: column;
         }
         .spinner {
-            width: 50px; height: 50px;
-            border: 5px solid #333;
-            border-top: 5px solid var(--primary);
-            border-radius: 50%;
+            width: 50px; height: 50px; border: 5px solid #333;
+            border-top: 5px solid var(--primary); border-radius: 50%;
             animation: spin 1s linear infinite;
         }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        
-        /* Video hidden for processing */
         #input_video { display: none; }
     </style>
     
-    <!-- Dependencies -->
+    <!-- Libraries -->
     <script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
@@ -144,7 +107,7 @@
 
     <div id="loader">
         <div class="spinner"></div>
-        <p id="loading-text">Loading Neural Networks & Assets...</p>
+        <p id="loading-text">Loading Mystic Arts...</p>
     </div>
 
     <div id="canvas-container"></div>
@@ -152,652 +115,574 @@
 
     <div id="ui-layer">
         <div id="status-panel" class="panel">
-            <div id="card-name">准备中...</div>
-            <div id="card-meaning">请等待发牌</div>
+            <div id="card-name"></div>
+            <div id="card-meaning"></div>
         </div>
 
+        <div id="guide-text">初始化中...</div>
+
         <div id="history-panel" class="panel">
-            <h3>抽卡记录</h3>
+            <h3>Fate Log</h3>
             <div id="history-list"></div>
         </div>
 
         <div id="controls" class="panel">
-            <div>当前模式: <span id="mode-label" style="color:var(--primary)">初始化...</span></div>
-            <div id="gesture-hint">
-                🖐 <b>张开</b>: 悬停/重置<br>
-                👌 <b>捏合</b>: 抓取卡牌<br>
-                ✊ <b>握拳</b>: 确认结果
-            </div>
-            <div id="mouse-hint" style="display:none">
-                🖱️ <b>移动</b>: 悬停<br>
-                🖱️ <b>左键按住</b>: 抓取<br>
-                ⌨️ <b>空格键</b>: 确认(抓取时)
-            </div>
+            <div>Mode: <span id="mode-label" style="color:var(--primary)">Detecting...</span></div>
             <button id="mode-toggle">切换输入模式</button>
         </div>
     </div>
 
 <script>
-/**
- * 塔罗牌数据 (大阿卡纳 0-21)
- * 使用维基百科的高清图源
- */
+// --- Tarot Data (RWS) ---
 const TAROT_DATA = [
-    { id: 0, name: "The Fool", url: "https://upload.wikimedia.org/wikipedia/commons/9/90/RWS_Tarot_00_Fool.jpg", up: "新的开始, 冒险, 纯真", rev: "鲁莽, 冒险的风险, 愚蠢" },
-    { id: 1, name: "The Magician", url: "https://upload.wikimedia.org/wikipedia/commons/d/de/RWS_Tarot_01_Magician.jpg", up: "意志力, 创造, 技能", rev: "操纵, 计划不周, 潜在天赋" },
-    { id: 2, name: "The High Priestess", url: "https://upload.wikimedia.org/wikipedia/commons/8/88/RWS_Tarot_02_High_Priestess.jpg", up: "直觉, 神秘, 内在知识", rev: "秘密, 压抑的情感, 撤退" },
-    { id: 3, name: "The Empress", url: "https://upload.wikimedia.org/wikipedia/commons/d/d2/RWS_Tarot_03_Empress.jpg", up: "丰饶, 母性, 自然", rev: "依赖, 创造力受阻, 空虚" },
-    { id: 4, name: "The Emperor", url: "https://upload.wikimedia.org/wikipedia/commons/c/c3/RWS_Tarot_04_Emperor.jpg", up: "权威, 结构, 父亲形象", rev: "暴政, 僵化, 缺乏纪律" },
-    { id: 5, name: "The Hierophant", url: "https://upload.wikimedia.org/wikipedia/commons/8/8d/RWS_Tarot_05_Hierophant.jpg", up: "传统, 精神指引, 信仰", rev: "反叛, 新观念, 限制" },
-    { id: 6, name: "The Lovers", url: "https://upload.wikimedia.org/wikipedia/commons/3/3a/TheLovers.jpg", up: "爱, 和谐, 关系, 选择", rev: "不和谐, 失衡, 错误的价值观" },
-    { id: 7, name: "The Chariot", url: "https://upload.wikimedia.org/wikipedia/commons/9/9b/RWS_Tarot_07_Chariot.jpg", up: "控制, 意志力, 胜利", rev: "失控, 侵略性, 缺乏方向" },
-    { id: 8, name: "Strength", url: "https://upload.wikimedia.org/wikipedia/commons/f/f5/RWS_Tarot_08_Strength.jpg", up: "力量, 勇气, 劝导", rev: "自我怀疑, 软弱, 生猛" },
-    { id: 9, name: "The Hermit", url: "https://upload.wikimedia.org/wikipedia/commons/4/4d/RWS_Tarot_09_Hermit.jpg", up: "内省, 孤独, 寻找真理", rev: "孤立, 偏执, 退出社会" },
-    { id: 10, name: "Wheel of Fortune", url: "https://upload.wikimedia.org/wikipedia/commons/3/3c/RWS_Tarot_10_Wheel_of_Fortune.jpg", up: "命运, 转折点, 周期", rev: "坏运气, 阻力, 循环打破" },
-    { id: 11, name: "Justice", url: "https://upload.wikimedia.org/wikipedia/commons/e/e0/RWS_Tarot_11_Justice.jpg", up: "正义, 公平, 真相", rev: "不公, 缺乏责任, 不诚实" },
-    { id: 12, name: "The Hanged Man", url: "https://upload.wikimedia.org/wikipedia/commons/2/2b/RWS_Tarot_12_Hanged_Man.jpg", up: "暂停, 放下, 新视角", rev: "拖延, 抵抗, 停滞" },
-    { id: 13, name: "Death", url: "https://upload.wikimedia.org/wikipedia/commons/d/d7/RWS_Tarot_13_Death.jpg", up: "结束, 转变, 过渡", rev: "抗拒改变, 无法释怀" },
-    { id: 14, name: "Temperance", url: "https://upload.wikimedia.org/wikipedia/commons/f/f8/RWS_Tarot_14_Temperance.jpg", up: "平衡, 节制, 耐心", rev: "失衡, 过度, 仓促" },
-    { id: 15, name: "The Devil", url: "https://upload.wikimedia.org/wikipedia/commons/5/55/RWS_Tarot_15_Devil.jpg", up: "束缚, 物质主义, 诱惑", rev: "打破枷锁, 恢复力量" },
-    { id: 16, name: "The Tower", url: "https://upload.wikimedia.org/wikipedia/commons/5/53/RWS_Tarot_16_Tower.jpg", up: "突变, 灾难, 启示", rev: "避免灾难, 恐惧改变" },
-    { id: 17, name: "The Star", url: "https://upload.wikimedia.org/wikipedia/commons/d/db/RWS_Tarot_17_Star.jpg", up: "希望, 灵感, 宁静", rev: "绝望, 缺乏信心, 沮丧" },
-    { id: 18, name: "The Moon", url: "https://upload.wikimedia.org/wikipedia/commons/7/7f/RWS_Tarot_18_Moon.jpg", up: "幻觉, 恐惧, 潜意识", rev: "释放恐惧, 混乱平息" },
-    { id: 19, name: "The Sun", url: "https://upload.wikimedia.org/wikipedia/commons/1/17/RWS_Tarot_19_Sun.jpg", up: "快乐, 成功, 活力", rev: "消沉, 暂时的失败" },
-    { id: 20, name: "Judgement", url: "https://upload.wikimedia.org/wikipedia/commons/d/dd/RWS_Tarot_20_Judgement.jpg", up: "审判, 重生, 内心召唤", rev: "自我怀疑, 拒绝召唤" },
-    { id: 21, name: "The World", url: "https://upload.wikimedia.org/wikipedia/commons/f/ff/RWS_Tarot_21_World.jpg", up: "完成, 整合, 成就", rev: "未完成, 缺乏闭环" }
+    { id: 0, name: "The Fool", url: "https://upload.wikimedia.org/wikipedia/commons/9/90/RWS_Tarot_00_Fool.jpg", up: "新的开始, 冒险", rev: "鲁莽, 愚蠢" },
+    { id: 1, name: "The Magician", url: "https://upload.wikimedia.org/wikipedia/commons/d/de/RWS_Tarot_01_Magician.jpg", up: "创造, 意志力", rev: "欺骗, 才能被埋没" },
+    { id: 2, name: "The High Priestess", url: "https://upload.wikimedia.org/wikipedia/commons/8/88/RWS_Tarot_02_High_Priestess.jpg", up: "直觉, 神秘", rev: "表面知识, 情绪失控" },
+    { id: 3, name: "The Empress", url: "https://upload.wikimedia.org/wikipedia/commons/d/d2/RWS_Tarot_03_Empress.jpg", up: "丰饶, 母性", rev: "依赖, 创造力受阻" },
+    { id: 4, name: "The Emperor", url: "https://upload.wikimedia.org/wikipedia/commons/c/c3/RWS_Tarot_04_Emperor.jpg", up: "权威, 结构", rev: "暴政, 僵化" },
+    { id: 5, name: "The Hierophant", url: "https://upload.wikimedia.org/wikipedia/commons/8/8d/RWS_Tarot_05_Hierophant.jpg", up: "传统, 信仰", rev: "反叛, 束缚" },
+    { id: 6, name: "The Lovers", url: "https://upload.wikimedia.org/wikipedia/commons/3/3a/TheLovers.jpg", up: "爱, 选择", rev: "不和谐, 错误的选择" },
+    { id: 7, name: "The Chariot", url: "https://upload.wikimedia.org/wikipedia/commons/9/9b/RWS_Tarot_07_Chariot.jpg", up: "胜利, 控制", rev: "失控, 挫败" },
+    { id: 8, name: "Strength", url: "https://upload.wikimedia.org/wikipedia/commons/f/f5/RWS_Tarot_08_Strength.jpg", up: "力量, 勇气", rev: "软弱, 自我怀疑" },
+    { id: 9, name: "The Hermit", url: "https://upload.wikimedia.org/wikipedia/commons/4/4d/RWS_Tarot_09_Hermit.jpg", up: "内省, 孤独", rev: "孤僻, 拒绝沟通" },
+    { id: 10, name: "Wheel of Fortune", url: "https://upload.wikimedia.org/wikipedia/commons/3/3c/RWS_Tarot_10_Wheel_of_Fortune.jpg", up: "命运, 转折", rev: "厄运, 抗拒改变" },
+    { id: 11, name: "Justice", url: "https://upload.wikimedia.org/wikipedia/commons/e/e0/RWS_Tarot_11_Justice.jpg", up: "正义, 真相", rev: "不公, 偏见" },
+    { id: 12, name: "The Hanged Man", url: "https://upload.wikimedia.org/wikipedia/commons/2/2b/RWS_Tarot_12_Hanged_Man.jpg", up: "牺牲, 新视角", rev: "徒劳, 拖延" },
+    { id: 13, name: "Death", url: "https://upload.wikimedia.org/wikipedia/commons/d/d7/RWS_Tarot_13_Death.jpg", up: "结束, 转变", rev: "抗拒结束, 停滞" },
+    { id: 14, name: "Temperance", url: "https://upload.wikimedia.org/wikipedia/commons/f/f8/RWS_Tarot_14_Temperance.jpg", up: "平衡, 节制", rev: "失衡, 极端" },
+    { id: 15, name: "The Devil", url: "https://upload.wikimedia.org/wikipedia/commons/5/55/RWS_Tarot_15_Devil.jpg", up: "束缚, 欲望", rev: "挣脱, 觉醒" },
+    { id: 16, name: "The Tower", url: "https://upload.wikimedia.org/wikipedia/commons/5/53/RWS_Tarot_16_Tower.jpg", up: "毁灭, 启示", rev: "避免灾难, 恐惧" },
+    { id: 17, name: "The Star", url: "https://upload.wikimedia.org/wikipedia/commons/d/db/RWS_Tarot_17_Star.jpg", up: "希望, 灵感", rev: "绝望, 缺乏信心" },
+    { id: 18, name: "The Moon", url: "https://upload.wikimedia.org/wikipedia/commons/7/7f/RWS_Tarot_18_Moon.jpg", up: "不安, 潜意识", rev: "混乱平息, 揭穿谎言" },
+    { id: 19, name: "The Sun", url: "https://upload.wikimedia.org/wikipedia/commons/1/17/RWS_Tarot_19_Sun.jpg", up: "快乐, 成功", rev: "暂时的阴霾" },
+    { id: 20, name: "Judgement", url: "https://upload.wikimedia.org/wikipedia/commons/d/dd/RWS_Tarot_20_Judgement.jpg", up: "审判, 重生", rev: "悔恨, 犹豫" },
+    { id: 21, name: "The World", url: "https://upload.wikimedia.org/wikipedia/commons/f/ff/RWS_Tarot_21_World.jpg", up: "圆满, 完成", rev: "未完成, 遗憾" }
 ];
 
-// 卡背纹理 (程序化生成一个简单的图案)
-function createCardBackTexture() {
-    const canvas = document.createElement('canvas');
-    canvas.width = 256; canvas.height = 512;
-    const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#2a2a4a';
-    ctx.fillRect(0, 0, 256, 512);
-    ctx.strokeStyle = '#d4af37';
-    ctx.lineWidth = 10;
-    ctx.strokeRect(10, 10, 236, 492);
-    ctx.beginPath();
-    ctx.arc(128, 256, 50, 0, Math.PI * 2);
-    ctx.stroke();
-    return new THREE.CanvasTexture(canvas);
-}
+// --- 3D Scene Vars ---
+let scene, camera, renderer;
+let deckGroup; // The rotating carousel
+let activeCard = null; // The currently selected card object
+let ashParticles = [];
 
-// ----------------------
-// 全局变量与状态
-// ----------------------
-let scene, camera, renderer, light;
-let currentCardMesh = null;
-let currentCardData = null;
-let isReversed = false;
-let deck = [...TAROT_DATA];
-let particles = []; // 灰烬粒子数组
+// --- Game Logic Vars ---
+const STATE = {
+    BROWSING: 0,      // 牌库旋转，寻找卡牌
+    GRABBED: 1,       // 捏住卡牌，跟随手部
+    CENTERING: 2,     // 握拳确认后，移动到中心并翻转
+    WAITING_OPEN: 3,  // 翻转完毕，等待张开手掌
+    DISSOLVING: 4     // 灰烬消散
+};
+let currentState = STATE.BROWSING;
+let deckRotationSpeed = 0;
+let remainingDeck = [...TAROT_DATA];
 
-// 输入状态
+// --- Input Vars ---
 const InputMode = { HAND: 'hand', MOUSE: 'mouse' };
 let currentMode = InputMode.HAND;
 let handLandmarks = null;
 let mouse = new THREE.Vector2();
+let isPinching = false;
+let isFisting = false;
 let isMouseDown = false;
 let isSpaceDown = false;
-
-// 游戏状态机
-const GameState = { IDLE: 0, HOVER: 1, GRABBED: 2, ANIMATING_OUT: 3 };
-let currentState = GameState.IDLE;
+let cursorPosition = new THREE.Vector2(); // Normalized -1 to 1
 let raycaster = new THREE.Raycaster();
-let cursorPosition = new THREE.Vector2(); // 统一光标位置 (手或鼠标)
-let grabOffset = new THREE.Vector3();
 
-// MediaPipe
-let hands;
-let cameraUtils;
+// --- MediaPipe ---
+let hands, cameraUtils;
 
-// ----------------------
-// 初始化 Three.js
-// ----------------------
+// ------------------------------------------------------------------
+// 1. Scene Setup
+// ------------------------------------------------------------------
 function initThree() {
     const container = document.getElementById('canvas-container');
-    
     scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0x111111, 0.02);
+    // 稍微暗一点的雾，营造神秘感
+    scene.fog = new THREE.FogExp2(0x050505, 0.02);
 
-    camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
-    camera.position.set(0, 0, 5);
+    camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 100);
+    camera.position.set(0, 2, 8); // 稍微抬高视角
 
     renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(window.devicePixelRatio);
     renderer.shadowMap.enabled = true;
     container.appendChild(renderer.domElement);
 
-    // 灯光
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
-    scene.add(ambientLight);
-
-    const dirLight = new THREE.DirectionalLight(0xffeebb, 0.8);
-    dirLight.position.set(2, 5, 5);
-    dirLight.castShadow = true;
-    scene.add(dirLight);
+    // Lights
+    const ambient = new THREE.AmbientLight(0xffffff, 0.3);
+    scene.add(ambient);
+    const spot = new THREE.SpotLight(0xffaa00, 1);
+    spot.position.set(0, 10, 5);
+    spot.angle = 0.5;
+    spot.penumbra = 0.5;
+    spot.castShadow = true;
+    scene.add(spot);
     
-    const pointLight = new THREE.PointLight(0xd4af37, 0.5, 10);
-    pointLight.position.set(0, 2, 2);
-    scene.add(pointLight);
+    // 底部补光
+    const purpleLight = new THREE.PointLight(0x4400ff, 0.5, 20);
+    purpleLight.position.set(-5, -2, 0);
+    scene.add(purpleLight);
 
-    // 监听窗口大小
-    window.addEventListener('resize', onWindowResize, false);
-}
+    buildDeckCarousel();
 
-function onWindowResize() {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-}
-
-// ----------------------
-// 卡牌逻辑
-// ----------------------
-function spawnCard() {
-    if (currentCardMesh) {
-        scene.remove(currentCardMesh);
-        currentCardMesh = null;
-    }
-    
-    if (deck.length === 0) {
-        deck = [...TAROT_DATA]; // 洗牌
-        addHistoryLog({name: "=== 洗牌 ===", isMsg: true});
-    }
-
-    // 随机抽取
-    const index = Math.floor(Math.random() * deck.length);
-    currentCardData = deck[index];
-    
-    // 正逆位判定
-    isReversed = Math.random() < 0.5;
-
-    // 创建几何体
-    const geometry = new THREE.BoxGeometry(2, 3.5, 0.05);
-    
-    // 纹理加载
-    const loader = new THREE.TextureLoader();
-    const backTex = createCardBackTexture();
-    
-    // 默认材质
-    const materials = [
-        new THREE.MeshStandardMaterial({ color: 0x222222 }), // right
-        new THREE.MeshStandardMaterial({ color: 0x222222 }), // left
-        new THREE.MeshStandardMaterial({ color: 0x222222 }), // top
-        new THREE.MeshStandardMaterial({ color: 0x222222 }), // bottom
-        new THREE.MeshStandardMaterial({ color: 0x222222, map: null }), // Front (placeholder)
-        new THREE.MeshStandardMaterial({ map: backTex }),   // Back
-    ];
-
-    currentCardMesh = new THREE.Mesh(geometry, materials);
-    
-    // 加载真实图片
-    loader.load(currentCardData.url, (tex) => {
-        tex.encoding = THREE.sRGBEncoding;
-        currentCardMesh.material[4].map = tex;
-        currentCardMesh.material[4].needsUpdate = true;
-    }, undefined, () => {
-        // 失败回退
-        currentCardMesh.material[4].color.setHex(0x550000); 
+    window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
     });
-
-    // 初始位置 (底部升起)
-    currentCardMesh.position.set(0, -5, 0);
-    // 初始旋转 (背面朝上)
-    currentCardMesh.rotation.y = Math.PI; 
-    
-    // 目标属性存储在userData
-    currentCardMesh.userData = {
-        targetPos: new THREE.Vector3(0, 0, 0),
-        targetRot: new THREE.Euler(0, isReversed ? Math.PI : 0, isReversed ? Math.PI : 0), // 正面朝前，如果逆位则Z轴转180
-        isRevealed: false
-    };
-
-    scene.add(currentCardMesh);
-
-    // UI更新
-    updateUI("准备抽取", "请使用手势或鼠标抓取卡牌");
-    currentState = GameState.IDLE;
-    
-    // 进场动画
-    animateEntry();
 }
 
-function animateEntry() {
-    let startTime = Date.now();
-    const duration = 1000;
+// 创建统一的牌背纹理
+const backTexture = (() => {
+    const cvs = document.createElement('canvas');
+    cvs.width = 256; cvs.height = 512;
+    const ctx = cvs.getContext('2d');
+    ctx.fillStyle = '#1a1a2e'; ctx.fillRect(0,0,256,512);
+    ctx.strokeStyle = '#d4af37'; ctx.lineWidth=8; ctx.strokeRect(10,10,236,492);
+    ctx.beginPath(); ctx.arc(128,256,60,0,Math.PI*2); ctx.stroke();
+    // 星星
+    ctx.fillStyle='#d4af37';
+    ctx.font='60px Arial'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText('★', 128, 256);
+    return new THREE.CanvasTexture(cvs);
+})();
+
+function buildDeckCarousel() {
+    if (deckGroup) scene.remove(deckGroup);
+    deckGroup = new THREE.Group();
+    scene.add(deckGroup);
+
+    const radius = 6;
+    const count = 22; // 展示22张牌背作为视觉效果
     
-    function loop() {
-        if (!currentCardMesh) return;
-        const now = Date.now();
-        const progress = Math.min((now - startTime) / duration, 1);
-        const ease = 1 - Math.pow(1 - progress, 3); // cubic out
-        
-        currentCardMesh.position.y = -5 + ease * 5; // -5 to 0
-        currentCardMesh.rotation.y = Math.PI + ease * Math.PI * 2; // spin
-        
-        if (progress < 1) requestAnimationFrame(loop);
-        else {
-            currentCardMesh.rotation.y = Math.PI; // 保持背面
-            currentState = GameState.IDLE;
-        }
-    }
-    loop();
-}
+    const geom = new THREE.BoxGeometry(1.8, 3.2, 0.05);
+    const matSide = new THREE.MeshStandardMaterial({ color: 0x111111 });
+    const matBack = new THREE.MeshStandardMaterial({ map: backTexture });
+    const matFrontPlaceholder = new THREE.MeshStandardMaterial({ color: 0x000000 }); // 暂时全黑，直到翻牌
 
-// ----------------------
-// 灰烬特效 (Ash Effect)
-// ----------------------
-class AshEffect {
-    constructor(mesh) {
-        this.particles = [];
-        const geom = mesh.geometry;
-        const posAttribute = geom.attributes.position;
-        const count = posAttribute.count;
+    for (let i = 0; i < count; i++) {
+        const materials = [matSide, matSide, matSide, matSide, matFrontPlaceholder, matBack];
+        const card = new THREE.Mesh(geom, materials);
         
-        // 采样点
-        const sampleRate = 2; // 降低采样率提升性能
-        const matWorld = mesh.matrixWorld;
+        const angle = (i / count) * Math.PI * 2;
+        card.position.x = Math.sin(angle) * radius;
+        card.position.z = Math.cos(angle) * radius - 2; // 稍微往后一点
+        card.position.y = Math.sin(angle * 2) * 0.5; // 上下浮动一点
         
-        const particleGeom = new THREE.BufferGeometry();
-        const positions = [];
-        const colors = [];
-        const sizes = [];
-        
-        // 简单颜色
-        const color = new THREE.Color(0xffaa33); // 火星颜色
-        
-        for (let i = 0; i < count; i+=sampleRate) {
-            const v = new THREE.Vector3();
-            v.fromBufferAttribute(posAttribute, i);
-            v.applyMatrix4(matWorld);
-            
-            this.particles.push({
-                pos: v.clone(),
-                vel: new THREE.Vector3((Math.random()-0.5)*0.05, Math.random()*0.1 + 0.02, (Math.random()-0.5)*0.05),
-                life: 1.0 + Math.random(),
-                noiseOffset: Math.random() * 100
-            });
-            
-            positions.push(v.x, v.y, v.z);
-            colors.push(color.r, color.g, color.b);
-            sizes.push(Math.random() * 0.1);
-        }
-        
-        particleGeom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-        particleGeom.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-        
-        // ShaderMaterial for fading
-        const material = new THREE.PointsMaterial({
-            size: 0.1,
-            vertexColors: true,
-            transparent: true,
-            opacity: 1,
-            sizeAttenuation: true
-        });
+        // 让牌面向中心
+        card.lookAt(0, 0, -2);
+        // 修正旋转，让牌背朝外
+        card.rotation.y += Math.PI; 
 
-        this.mesh = new THREE.Points(particleGeom, material);
-        scene.add(this.mesh);
-    }
-
-    update() {
-        const positions = this.mesh.geometry.attributes.position.array;
-        let activeCount = 0;
-        
-        for (let i = 0; i < this.particles.length; i++) {
-            const p = this.particles[i];
-            if (p.life > 0) {
-                // Turbulence
-                p.vel.x += Math.sin(Date.now() * 0.005 + p.noiseOffset) * 0.002;
-                
-                p.pos.add(p.vel);
-                p.life -= 0.02;
-                
-                positions[i*3] = p.pos.x;
-                positions[i*3+1] = p.pos.y;
-                positions[i*3+2] = p.pos.z;
-                activeCount++;
-            }
-        }
-        
-        this.mesh.geometry.attributes.position.needsUpdate = true;
-        this.mesh.material.opacity = Math.max(0, this.mesh.material.opacity - 0.01);
-        
-        return activeCount > 0 && this.mesh.material.opacity > 0;
-    }
-
-    dispose() {
-        scene.remove(this.mesh);
-        this.mesh.geometry.dispose();
-        this.mesh.material.dispose();
+        card.userData = { isDeckCard: true };
+        deckGroup.add(card);
     }
 }
 
-// ----------------------
-// 游戏主循环逻辑
-// ----------------------
-function updateGameLogic() {
-    if (currentState === GameState.ANIMATING_OUT) {
-        // 更新粒子
-        for (let i = particles.length - 1; i >= 0; i--) {
-            const alive = particles[i].update();
-            if (!alive) {
-                particles[i].dispose();
-                particles.splice(i, 1);
-            }
+// ------------------------------------------------------------------
+// 2. Logic & Animation Loop
+// ------------------------------------------------------------------
+function updateLogic() {
+    updateInputState();
+    
+    // 灰烬更新
+    for (let i = ashParticles.length - 1; i >= 0; i--) {
+        if (!ashParticles[i].update()) {
+            ashParticles[i].dispose();
+            ashParticles.splice(i, 1);
         }
+    }
+
+    if (currentState === STATE.BROWSING) {
+        handleBrowsing();
+    } else if (currentState === STATE.GRABBED) {
+        handleGrabbed();
+    } else if (currentState === STATE.WAITING_OPEN) {
+        handleWaitingOpen();
+    }
+}
+
+function handleBrowsing() {
+    // 1. 旋转逻辑
+    const threshold = 0.2;
+    if (cursorPosition.x < -threshold) {
+        // Hand Left -> Rotate Left
+        deckRotationSpeed = THREE.MathUtils.lerp(deckRotationSpeed, 0.02, 0.1);
+    } else if (cursorPosition.x > threshold) {
+        // Hand Right -> Rotate Right
+        deckRotationSpeed = THREE.MathUtils.lerp(deckRotationSpeed, -0.02, 0.1);
+    } else {
+        // Center -> Stop
+        deckRotationSpeed = THREE.MathUtils.lerp(deckRotationSpeed, 0, 0.1);
+    }
+    deckGroup.rotation.y += deckRotationSpeed;
+
+    // 2. 交互提示
+    document.getElementById('guide-text').innerText = "左右移动旋转牌库，捏合(Pinch)抓取一张";
+
+    // 3. 射线检测抓取
+    raycaster.setFromCamera(cursorPosition, camera);
+    const intersects = raycaster.intersectObjects(deckGroup.children);
+
+    if (intersects.length > 0) {
+        const hit = intersects[0].object;
+        document.body.style.cursor = 'pointer';
+        
+        // Hover effect
+        hit.scale.setScalar(1.1);
+        
+        if (isPinching) {
+            pickCard(hit);
+        }
+    } else {
+        document.body.style.cursor = 'default';
+        // Reset scales
+        deckGroup.children.forEach(c => c.scale.lerp(new THREE.Vector3(1,1,1), 0.2));
+    }
+}
+
+function pickCard(mesh) {
+    // 将选中的 Mesh 从 Group 转移到 Scene，并保持世界坐标不变
+    activeCard = mesh;
+    
+    // 计算世界坐标
+    const worldPos = new THREE.Vector3();
+    const worldQuat = new THREE.Quaternion();
+    mesh.getWorldPosition(worldPos);
+    mesh.getWorldQuaternion(worldQuat);
+    
+    // 从牌库移除，加到场景根节点
+    deckGroup.remove(mesh);
+    scene.add(activeCard);
+    
+    activeCard.position.copy(worldPos);
+    activeCard.quaternion.copy(worldQuat);
+    
+    currentState = STATE.GRABBED;
+    
+    // 分配数据
+    const randIdx = Math.floor(Math.random() * remainingDeck.length);
+    const data = remainingDeck[randIdx];
+    // 稍微洗一下剩下的牌，防止重复太快
+    if (remainingDeck.length > 1) remainingDeck.splice(randIdx, 1);
+    else remainingDeck = [...TAROT_DATA]; // 重置
+    
+    // 随机正逆
+    const isRev = Math.random() < 0.5;
+    
+    activeCard.userData.cardData = data;
+    activeCard.userData.isReversed = isRev;
+}
+
+function handleGrabbed() {
+    document.getElementById('guide-text').innerText = "保持抓取移动，握拳(Fist/Space)确认命运";
+    
+    // 跟随手势/鼠标
+    // 计算射线上的目标点 (距离摄像机3个单位)
+    raycaster.setFromCamera(cursorPosition, camera);
+    const targetPos = raycaster.ray.origin.clone().add(raycaster.ray.direction.clone().multiplyScalar(3));
+    
+    activeCard.position.lerp(targetPos, 0.15);
+    
+    // 随动旋转
+    activeCard.rotation.z = (activeCard.position.x) * -0.5;
+    activeCard.rotation.x = (activeCard.position.y) * 0.5;
+    // 保持背对摄像机 (Y ~= PI)
+    activeCard.rotation.y = Math.PI;
+
+    // 检测松手 -> 取消
+    if (!isPinching) {
+        // 简单处理：如果松手，销毁当前牌，生成新的回牌库 (或直接飞回去太复杂，直接删了算未选中)
+        scene.remove(activeCard);
+        activeCard = null;
+        // 补一张回牌库
+        const geom = new THREE.BoxGeometry(1.8, 3.2, 0.05);
+        const matSide = new THREE.MeshStandardMaterial({ color: 0x111111 });
+        const matBack = new THREE.MeshStandardMaterial({ map: backTexture });
+        const matFront = new THREE.MeshStandardMaterial({ color: 0 });
+        const newCard = new THREE.Mesh(geom, [matSide,matSide,matSide,matSide,matFront,matBack]);
+        newCard.userData = { isDeckCard: true };
+        deckGroup.add(newCard); // 位置会重叠，这里简化处理不重新排布了，反正旋转起来看不清
+        
+        currentState = STATE.BROWSING;
         return;
     }
 
-    if (!currentCardMesh) return;
+    // 检测握拳 -> 确认
+    if (isFisting) {
+        currentState = STATE.CENTERING;
+        performCenterAndFlip();
+    }
+}
 
-    // 1. 获取输入状态 (Pinch? Fist?)
-    let isPinching = false;
-    let isFisting = false;
+function performCenterAndFlip() {
+    document.getElementById('guide-text').innerText = "命运揭示中...";
+    
+    // 1. 加载贴图
+    const data = activeCard.userData.cardData;
+    const isRev = activeCard.userData.isReversed;
+    const texLoader = new THREE.TextureLoader();
+    
+    texLoader.load(data.url, (tex) => {
+        tex.encoding = THREE.sRGBEncoding;
+        // Face material is index 4
+        activeCard.material[4].map = tex;
+        activeCard.material[4].needsUpdate = true;
+    });
+
+    // 2. 动画：移动到正中间 (0,0,2) 并旋转
+    const startPos = activeCard.position.clone();
+    const startRot = activeCard.rotation.clone();
+    const targetPos = new THREE.Vector3(0, 0, 4); // 离镜头很近
+    // 目标旋转：正面朝相机。
+    // 几何体正面是+Z，背面是-Z。
+    // 如果是正位，Y=0, Z=0. 如果逆位，Z=PI.
+    const targetRotY = 0;
+    const targetRotZ = isRev ? Math.PI : 0;
+    
+    let startTime = Date.now();
+    const duration = 1000; // 1秒动画
+
+    function animateFlip() {
+        const now = Date.now();
+        const p = Math.min((now - startTime) / duration, 1);
+        const ease = 1 - Math.pow(1 - p, 3); // Cubic Out
+
+        activeCard.position.lerpVectors(startPos, targetPos, ease);
+        
+        // 旋转插值 (简单线性)
+        activeCard.rotation.x = THREE.MathUtils.lerp(startRot.x, 0, ease);
+        activeCard.rotation.y = THREE.MathUtils.lerp(startRot.y, targetRotY, ease);
+        activeCard.rotation.z = THREE.MathUtils.lerp(startRot.z, targetRotZ, ease);
+
+        if (p < 1) {
+            requestAnimationFrame(animateFlip);
+        } else {
+            // 完成
+            currentState = STATE.WAITING_OPEN;
+            showResultUI(data, isRev);
+        }
+    }
+    animateFlip();
+}
+
+function showResultUI(data, isRev) {
+    const status = document.getElementById('status-panel');
+    const nameDiv = document.getElementById('card-name');
+    const meanDiv = document.getElementById('card-meaning');
+    
+    nameDiv.innerText = data.name + (isRev ? " (逆位)" : "");
+    meanDiv.innerText = isRev ? data.rev : data.up;
+    status.classList.add('visible');
+    
+    document.getElementById('guide-text').innerText = "张开手掌 (OPEN) 释放卡牌";
+
+    // 记录
+    const list = document.getElementById('history-list');
+    const item = document.createElement('div');
+    item.className = 'history-item';
+    item.innerHTML = `<img src="${data.url}" class="${isRev?'reversed':''}"><span>${data.name} <span style="color:#ff6b6b;font-size:0.8em">${isRev?'(逆)':''}</span></span>`;
+    list.insertBefore(item, list.firstChild);
+}
+
+function handleWaitingOpen() {
+    // 牌在中间悬浮
+    activeCard.position.y = Math.sin(Date.now() * 0.002) * 0.1;
+
+    // 逻辑：如果现在没有捏合(Pinch) 且 没有握拳(Fist) -> 认为是Open
+    // 鼠标模式：松开左键
+    const isOpen = !isPinching && !isFisting;
+    
+    if (isOpen) {
+        currentState = STATE.DISSOLVING;
+        triggerAshEffect();
+    }
+}
+
+// ------------------------------------------------------------------
+// 3. Ash Effect
+// ------------------------------------------------------------------
+function triggerAshEffect() {
+    document.getElementById('status-panel').classList.remove('visible');
+    document.getElementById('guide-text').innerText = "尘归尘，土归土...";
+
+    // 简单的粒子生成
+    const geom = activeCard.geometry;
+    const posAttr = geom.attributes.position;
+    const count = posAttr.count;
+    const particlesPos = [];
+    const particlesColor = [];
+    
+    // 采样
+    const worldMat = activeCard.matrixWorld;
+    const color = new THREE.Color(0xffaa33);
+
+    for(let i=0; i<count; i+=3) { // 降低密度
+        const v = new THREE.Vector3().fromBufferAttribute(posAttr, i).applyMatrix4(worldMat);
+        particlesPos.push(v.x, v.y, v.z);
+        particlesColor.push(color.r, color.g, color.b);
+    }
+
+    const pGeom = new THREE.BufferGeometry();
+    pGeom.setAttribute('position', new THREE.Float32BufferAttribute(particlesPos, 3));
+    pGeom.setAttribute('color', new THREE.Float32BufferAttribute(particlesColor, 3));
+    
+    const pMat = new THREE.PointsMaterial({
+        size: 0.08, vertexColors: true, transparent: true, opacity: 1
+    });
+    
+    const points = new THREE.Points(pGeom, pMat);
+    scene.add(points);
+    
+    // 粒子对象
+    const ashObj = {
+        mesh: points,
+        vels: Array(particlesPos.length/3).fill(0).map(()=>({
+            x: (Math.random()-0.5)*0.05,
+            y: Math.random()*0.05 + 0.02,
+            z: (Math.random()-0.5)*0.05
+        })),
+        update: function() {
+            const pos = this.mesh.geometry.attributes.position.array;
+            let alive = false;
+            for(let j=0; j<this.vels.length; j++) {
+                pos[j*3] += this.vels[j].x;
+                pos[j*3+1] += this.vels[j].y;
+                pos[j*3+2] += this.vels[j].z;
+                
+                // Turbulence
+                this.vels[j].x += (Math.random()-0.5)*0.002;
+            }
+            this.mesh.geometry.attributes.position.needsUpdate = true;
+            this.mesh.material.opacity -= 0.015;
+            
+            return this.mesh.material.opacity > 0;
+        },
+        dispose: function() {
+            scene.remove(this.mesh);
+            this.mesh.geometry.dispose();
+            this.mesh.material.dispose();
+        }
+    };
+    
+    ashParticles.push(ashObj);
+    
+    // 移除卡牌
+    scene.remove(activeCard);
+    activeCard = null;
+
+    // 延迟后重置回 BROWSING
+    setTimeout(() => {
+        // 补一个新牌背到牌库（可选，这里为了简单不补也可以，或者补一个）
+        const geom = new THREE.BoxGeometry(1.8, 3.2, 0.05);
+        const matSide = new THREE.MeshStandardMaterial({ color: 0x111111 });
+        const matBack = new THREE.MeshStandardMaterial({ map: backTexture });
+        const matFront = new THREE.MeshStandardMaterial({ color: 0 });
+        const newCard = new THREE.Mesh(geom, [matSide,matSide,matSide,matSide,matFront,matBack]);
+        newCard.userData = { isDeckCard: true };
+        // 随机放到圆环某个位置其实比较难看，因为现在圆环在转。
+        // 最好的办法是重新构建圆环或者只是逻辑上继续。
+        // 简单处理：直接加到Group里，位置设为0,0,0然后让它归位？太复杂。
+        // 我们直接让用户在剩下的牌里选即可。
+        if(deckGroup.children.length < 5) {
+             // 如果牌太少了，重新生成一整副
+             buildDeckCarousel();
+        }
+        
+        currentState = STATE.BROWSING;
+    }, 1500);
+}
+
+// ------------------------------------------------------------------
+// 4. Input Handling
+// ------------------------------------------------------------------
+function updateInputState() {
+    isPinching = false;
+    isFisting = false;
 
     if (currentMode === InputMode.HAND && handLandmarks) {
-        // MediaPipe 逻辑
-        const thumbTip = handLandmarks[4];
-        const indexTip = handLandmarks[8];
+        const thumb = handLandmarks[4];
+        const index = handLandmarks[8];
+        const middle = handLandmarks[12];
         const wrist = handLandmarks[0];
-        
-        // 计算捏合 (Thumb Tip <-> Index Tip)
-        const pinchDist = Math.hypot(thumbTip.x - indexTip.x, thumbTip.y - indexTip.y);
+
+        // Pinch: 拇指与食指距离
+        const pinchDist = Math.hypot(thumb.x - index.x, thumb.y - index.y);
         isPinching = pinchDist < 0.05;
 
-        // 计算握拳 (Tip <-> Wrist 对于所有手指)
-        // 简化: 中指尖到手腕距离短
-        const middleTip = handLandmarks[12];
-        const fistDist = Math.hypot(middleTip.x - wrist.x, middleTip.y - wrist.y);
-        isFisting = fistDist < 0.15; // 阈值需调试
+        // Fist: 中指尖到手腕的距离短 (简单的握拳检测)
+        const fistDist = Math.hypot(middle.x - wrist.x, middle.y - wrist.y);
+        isFisting = fistDist < 0.15; // 阈值
 
-        // 更新光标
-        // 使用食指和拇指的中点
-        const cx = (thumbTip.x + indexTip.x) / 2;
-        const cy = (thumbTip.y + indexTip.y) / 2;
-        // 映射到屏幕坐标 (-1 to 1)
-        cursorPosition.set((1 - cx) * 2 - 1, (1 - cy) * 2 - 1); // 镜像X
+        // Cursor: Index tip mapped to screen
+        // Mirror X
+        cursorPosition.set((1 - index.x) * 2 - 1, (1 - index.y) * 2 - 1);
 
     } else if (currentMode === InputMode.MOUSE) {
-        // 鼠标逻辑
         cursorPosition.copy(mouse);
         isPinching = isMouseDown;
         isFisting = isSpaceDown;
     }
-
-    // 2. 射线检测
-    raycaster.setFromCamera(cursorPosition, camera);
-    
-    // 3. 状态处理
-    if (currentState === GameState.IDLE || currentState === GameState.HOVER) {
-        const intersects = raycaster.intersectObject(currentCardMesh);
-        if (intersects.length > 0) {
-            document.body.style.cursor = 'pointer';
-            // 高亮
-            currentCardMesh.scale.setScalar(1.05);
-            currentState = GameState.HOVER;
-
-            if (isPinching) {
-                currentState = GameState.GRABBED;
-                // 计算偏移，使得抓取点不跳动
-                // 简化：直接吸附到中心稍前
-                updateUI("已抓取", isReversed ? "???" : "???");
-            }
-        } else {
-            document.body.style.cursor = 'default';
-            currentCardMesh.scale.setScalar(1);
-            currentState = GameState.IDLE;
-        }
-    }
-    
-    else if (currentState === GameState.GRABBED) {
-        if (!isPinching) {
-            // 松开 -> 回到原位 (Idle)
-            currentState = GameState.IDLE;
-            new TWEEN_Pos(currentCardMesh.position, new THREE.Vector3(0,0,0), 300);
-            updateUI("准备抽取", "请使用手势或鼠标抓取卡牌");
-        } else {
-            // 拖拽中
-            // 将卡牌移动到射线距离摄像机一定距离的位置
-            const dist = 3.5; // 悬浮在镜头前
-            const targetPos = raycaster.ray.origin.clone().add(raycaster.ray.direction.clone().multiplyScalar(dist));
-            
-            // 线性插值平滑移动
-            currentCardMesh.position.lerp(targetPos, 0.2);
-            
-            // 稍微根据移动倾斜
-            currentCardMesh.rotation.x = (targetPos.y - currentCardMesh.position.y) * 0.5;
-            currentCardMesh.rotation.z = -(targetPos.x - currentCardMesh.position.x) * 0.5;
-            // 保持正面/背面
-            // 这里我们希望抓取时翻开看一眼？或者确认后才翻开？
-            // 设定：抓取时看到牌背，确认(FIST)后翻开并销毁
-            
-            updateUI("确认命运?", "保持抓取并【握拳】(或空格) 确认");
-
-            if (isFisting) {
-                confirmDraw();
-            }
-        }
-    }
 }
 
-// 简单的补间动画辅助
-function TWEEN_Pos(obj, target, ms) {
-    const start = obj.clone();
-    const startTime = Date.now();
-    function loop() {
-        const p = Math.min((Date.now() - startTime) / ms, 1);
-        const e = 1 - Math.pow(1-p, 3);
-        obj.lerpVectors(start, target, e);
-        if (p < 1) requestAnimationFrame(loop);
-    }
-    loop();
-}
-
-// ----------------------
-// 确认抽取逻辑
-// ----------------------
-function confirmDraw() {
-    if (currentState === GameState.ANIMATING_OUT) return;
-    currentState = GameState.ANIMATING_OUT;
-
-    // 1. 翻牌动画
-    const targetRotZ = isReversed ? Math.PI : 0;
-    
-    // 强制翻转正面朝摄像机
-    // Mesh 结构：正面是 index 4, 背面是 index 5. 初始 Y=PI (背对).
-    // 要看正面，Y应该变为 0. 
-    // 如果逆位，Z 变为 PI.
-    
-    const startRot = currentCardMesh.rotation.clone();
-    const startTime = Date.now();
-    
-    updateUI(currentCardData.name + (isReversed ? " (逆位)" : ""), 
-             isReversed ? currentCardData.rev : currentCardData.up);
-    
-    // 从牌库移除
-    deck = deck.filter(c => c.id !== currentCardData.id);
-
-    // 记录历史
-    addHistoryLog({
-        name: currentCardData.name,
-        url: currentCardData.url,
-        reversed: isReversed,
-        meaning: isReversed ? currentCardData.rev : currentCardData.up
-    });
-
-    function flipAndAsh() {
-        const now = Date.now();
-        const p = Math.min((now - startTime) / 600, 1); // 0.6秒翻牌
-        
-        // 旋转
-        currentCardMesh.rotation.y = THREE.MathUtils.lerp(startRot.y, 0, p);
-        currentCardMesh.rotation.z = THREE.MathUtils.lerp(startRot.z, targetRotZ, p);
-        currentCardMesh.rotation.x = THREE.MathUtils.lerp(startRot.x, 0, p); // 修正倾斜
-        
-        if (p < 1) {
-            requestAnimationFrame(flipAndAsh);
-        } else {
-            // 翻牌结束，触发灰烬
-            setTimeout(() => {
-                particles.push(new AshEffect(currentCardMesh));
-                scene.remove(currentCardMesh);
-                currentCardMesh = null;
-                
-                // 自动下一张
-                setTimeout(spawnCard, 2000);
-            }, 500); // 停留0.5秒观看
-        }
-    }
-    flipAndAsh();
-}
-
-// ----------------------
-// UI 与 输入处理
-// ----------------------
-function updateUI(title, subtitle) {
-    document.getElementById('card-name').innerText = title;
-    document.getElementById('card-meaning').innerText = subtitle;
-}
-
-function addHistoryLog(item) {
-    const list = document.getElementById('history-list');
-    const div = document.createElement('div');
-    div.className = 'history-item';
-    
-    if (item.isMsg) {
-        div.innerText = item.name;
-        div.style.justifyContent = "center";
-        div.style.fontStyle = "italic";
-    } else {
-        const img = document.createElement('img');
-        img.src = item.url;
-        if (item.reversed) img.className = 'reversed';
-        
-        const text = document.createElement('span');
-        text.innerHTML = `${item.name} ${item.reversed ? '<span class="rev-tag">(逆)</span>' : ''}`;
-        
-        div.appendChild(img);
-        div.appendChild(text);
-    }
-    
-    list.insertBefore(div, list.firstChild);
-}
-
-// 鼠标事件
-window.addEventListener('mousemove', (e) => {
+// Event Listeners
+window.addEventListener('mousemove', e => {
     mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
     mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
 });
-window.addEventListener('mousedown', () => { isMouseDown = true; });
-window.addEventListener('mouseup', () => { isMouseDown = false; });
-window.addEventListener('keydown', (e) => { if(e.code === 'Space') isSpaceDown = true; });
-window.addEventListener('keyup', (e) => { if(e.code === 'Space') isSpaceDown = false; });
+window.addEventListener('mousedown', () => isMouseDown = true);
+window.addEventListener('mouseup', () => isMouseDown = false);
+window.addEventListener('keydown', e => { if(e.code==='Space') isSpaceDown=true; });
+window.addEventListener('keyup', e => { if(e.code==='Space') isSpaceDown=false; });
 
-// 模式切换
-const toggleBtn = document.getElementById('mode-toggle');
-toggleBtn.addEventListener('click', () => {
-    if (currentMode === InputMode.HAND) enableMouseMode();
-    else enableHandMode(); // 尝试切回（如果之前失败了可能不行，但逻辑上允许重试）
+document.getElementById('mode-toggle').addEventListener('click', () => {
+    if (currentMode === InputMode.HAND) {
+        currentMode = InputMode.MOUSE;
+        document.getElementById('mode-label').innerText = "鼠标 Mouse";
+        // Stop camera logic if needed
+    } else {
+        location.reload();
+    }
 });
 
-function enableMouseMode() {
-    currentMode = InputMode.MOUSE;
-    document.getElementById('mode-label').innerText = "鼠标 Mouse";
-    document.getElementById('gesture-hint').style.display = 'none';
-    document.getElementById('mouse-hint').style.display = 'block';
-    
-    // 停止 MediaPipe (节省资源)
-    if (cameraUtils) {
-        // Note: CameraUtils doesn't have an easy stop method in the simple API, 
-        // usually we just stop processing results.
-        const video = document.getElementById('input_video');
-        if(video.srcObject) {
-            video.srcObject.getTracks().forEach(track => track.stop());
-        }
-    }
-}
-
-function enableHandMode() {
-    location.reload(); // 简单粗暴重置以重新请求权限
-}
-
-// ----------------------
-// MediaPipe 初始化
-// ----------------------
+// MediaPipe Setup
 function onResults(results) {
     document.getElementById('loader').style.display = 'none';
-    
-    if (currentMode !== InputMode.HAND) return;
-
     if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-        // 只取第一只手
         handLandmarks = results.multiHandLandmarks[0];
     } else {
         handLandmarks = null;
     }
 }
 
-function initMediaPipe() {
-    const videoElement = document.getElementById('input_video');
-    
-    hands = new Hands({locateFile: (file) => {
-        return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
-    }});
-    
-    hands.setOptions({
-        maxNumHands: 1,
-        modelComplexity: 1,
-        minDetectionConfidence: 0.5,
-        minTrackingConfidence: 0.5
-    });
-    
-    hands.onResults(onResults);
-    
-    cameraUtils = new Camera(videoElement, {
-        onFrame: async () => {
-            if (currentMode === InputMode.HAND) {
-                await hands.send({image: videoElement});
-            }
-        },
-        width: 640,
-        height: 480
-    });
-    
-    cameraUtils.start()
-        .then(() => {
-            console.log("Camera started");
-            document.getElementById('mode-label').innerText = "手势 Hand (Webcam)";
-        })
-        .catch(err => {
-            console.error("Camera failed", err);
-            document.getElementById('loading-text').innerText = "摄像头失败，切换至鼠标模式...";
-            setTimeout(() => {
-                document.getElementById('loader').style.display = 'none';
-                enableMouseMode();
-            }, 1000);
-        });
-}
+const videoElement = document.getElementById('input_video');
+hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+hands.onResults(onResults);
 
-// ----------------------
-// 主循环
-// ----------------------
+cameraUtils = new Camera(videoElement, {
+    onFrame: async () => { if (currentMode === InputMode.HAND) await hands.send({image: videoElement}); },
+    width: 640, height: 480
+});
+cameraUtils.start().then(() => {
+    document.getElementById('mode-label').innerText = "手势 Hand (Webcam)";
+}).catch(() => {
+    document.getElementById('loading-text').innerText = "No Camera. Using Mouse.";
+    setTimeout(() => {
+        document.getElementById('loader').style.display = 'none';
+        currentMode = InputMode.MOUSE;
+        document.getElementById('mode-label').innerText = "鼠标 Mouse";
+    }, 1000);
+});
+
+// Run
+initThree();
 function animate() {
     requestAnimationFrame(animate);
-    
-    updateGameLogic();
-    
+    updateLogic();
     renderer.render(scene, camera);
 }
-
-// ----------------------
-// 启动
-// ----------------------
-initThree();
-initMediaPipe();
-spawnCard();
 animate();
 
 </script>
