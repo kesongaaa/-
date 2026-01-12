@@ -3,20 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cyber Tarot - Deep Space</title>
+    <title>Cyber Tarot - Swipe Edition</title>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.js" crossorigin="anonymous"></script>
     <style>
         :root {
             --bg-color: #000000;
             --tech-green: #00ff9d;
-            --tech-dim: rgba(0, 255, 157, 0.15);
-            
-            /* 1. 基础尺寸 (这是背景里看起来的大小) */
-            --card-width: 200px;
-            --card-height: 350px;
-            
-            /* 2. 半径设置 (推得足够远，看起来就会小) */
-            --radius: 900px; 
+            --card-width: 200px; /* 卡牌变大一点，更有冲击力 */
+            --card-height: 340px;
         }
 
         body {
@@ -30,212 +24,157 @@
             justify-content: center;
             align-items: center;
             cursor: none;
-            /* 3. 视距 (决定了近大远小的程度，越小透视越强) */
-            perspective: 800px; 
+            perspective: 1000px; /* 3D 视距 */
         }
 
-        /* 辅助网格：帮你找回空间感 (很淡) */
-        #grid-floor {
-            position: fixed; top: 50%; left: 50%; width: 200vw; height: 200vw;
-            transform: translate(-50%, -50%) rotateX(90deg) translateZ(300px);
-            background: radial-gradient(circle, transparent 0%, #000 70%),
-                        linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
-                        linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
-            background-size: 100% 100%, 100px 100px, 100px 100px;
-            pointer-events: none; z-index: 0;
+        /* 背景层 */
+        #bg-canvas, #hand-canvas {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
         }
+        #bg-canvas { z-index: 0; }
+        #hand-canvas { z-index: 50; }
 
-        canvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
-        #bg-canvas { z-index: 1; }
-        #effect-canvas { z-index: 60; }
-        #hand-canvas { z-index: 70; opacity: 0.8; }
-
-        /* 世界容器 */
-        #world-container {
+        /* 卡牌长廊容器 */
+        #card-container {
             position: absolute;
-            top: 50%; left: 50%;
-            width: 0; height: 0;
+            top: 50%;
+            left: 50%;
+            width: 0; height: 0; /* 容器本身不占位，全靠 absolute */
             transform-style: preserve-3d;
             z-index: 10;
         }
 
+        /* 卡牌样式 */
         .card-wrapper {
             position: absolute;
             width: var(--card-width);
             height: var(--card-height);
+            /* 居中定位 */
             left: calc(var(--card-width) * -0.5);
             top: calc(var(--card-height) * -0.5);
             transform-style: preserve-3d;
-            /* 4. 关键修正：去掉 hidden，防止背面渲染丢失 */
-            /* backface-visibility: hidden; */ 
+            /* 动画由 JS 每一帧驱动，这里不需要 transition */
+            cursor: pointer;
         }
 
         .card-face {
             position: absolute; width: 100%; height: 100%;
-            border-radius: 12px;
-            backface-visibility: hidden; /* 这里保留 */
+            backface-visibility: hidden;
+            border-radius: 10px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.8);
         }
 
-        /* 5. 视觉修复：让卡背不再是纯黑，而是深灰 + 发光边框 */
+        /* 卡背 */
         .card-back {
-            background: linear-gradient(135deg, #151515 0%, #080808 100%);
-            border: 2px solid rgba(255, 255, 255, 0.15); /* 默认有可见边框 */
-            box-shadow: 0 0 15px rgba(0,0,0,0.8);
+            background: #080808;
+            border: 2px solid #333;
+            box-shadow: 0 0 15px rgba(255,255,255,0.05);
             display: flex; justify-content: center; align-items: center;
-            transition: all 0.3s ease;
         }
-        
-        /* 卡背纹理 - 让你能看清它的存在 */
         .card-back::after {
-            content: '✦'; /* 符文 */
-            font-size: 40px;
-            color: rgba(255, 255, 255, 0.1);
+            content: ''; width: 50px; height: 80px;
+            border: 1px solid rgba(255,255,255,0.1);
         }
 
-        /* 锁定状态：高亮 */
-        .card-wrapper.locked .card-back {
+        /* 激活状态（位于中间时） */
+        .card-wrapper.active .card-back {
             border-color: var(--tech-green);
-            box-shadow: 0 0 50px var(--tech-green), inset 0 0 20px var(--tech-green);
-            background: #1a1a1a;
-            /* 稍微拉近一点，提示选中 */
-            transform: translateZ(50px) scale(1.05); 
-        }
-        .card-wrapper.locked .card-back::after {
-            color: var(--tech-green);
-            text-shadow: 0 0 10px var(--tech-green);
+            box-shadow: 0 0 50px rgba(0, 255, 157, 0.4);
         }
 
         .card-front {
             background: #111;
-            transform: rotateY(180deg); /* 预置翻转 */
-        }
-
-        /* 6. 抓取层 (Active Card) */
-        #active-card {
-            position: fixed;
-            width: var(--card-width);
-            height: var(--card-height);
-            top: 0; left: 0;
-            transform-style: preserve-3d;
-            z-index: 100;
-            display: none;
-            pointer-events: none;
-        }
-        
-        #active-card .inner {
-            width: 100%; height: 100%;
-            transform-style: preserve-3d;
-            transition: transform 0.4s cubic-bezier(0.19, 1, 0.22, 1);
-        }
-
-        #active-card.flipped .inner {
             transform: rotateY(180deg);
         }
-        
-        /* 抓取后的放大效果：通过 JS 控制 scale，这里设置基础样式 */
-        #active-card img {
-            width: 100%; height: 100%; object-fit: cover; border-radius: 12px;
-            box-shadow: 0 0 50px rgba(0,0,0,0.8);
-            border: 1px solid #444;
-        }
+        .card-front img { width: 100%; height: 100%; object-fit: cover; border-radius: 10px; }
 
+        .flipped { transform: rotateY(180deg) !important; } /* JS 会覆盖 transform，这里用 class 标记状态 */
+
+        /* 提示与光标 */
         #status-text {
-            position: fixed; bottom: 15%; width: 100%; text-align: center;
+            position: fixed; bottom: 10%; width: 100%; text-align: center;
             color: rgba(255,255,255,0.4); font-size: 14px; letter-spacing: 2px;
-            text-shadow: 0 0 10px #000; z-index: 80;
+            z-index: 100;
         }
 
+        #cursor-ring {
+            position: fixed; width: 30px; height: 30px;
+            border: 2px solid var(--tech-green); border-radius: 50%;
+            box-shadow: 0 0 15px var(--tech-green);
+            transform: translate(-50%, -50%);
+            z-index: 100; pointer-events: none;
+            transition: width 0.1s, height 0.1s;
+        }
+        #cursor-ring.pinching { width: 10px; height: 10px; background: var(--tech-green); }
+        
         #webcam { display: none; }
     </style>
 </head>
 <body>
 
-    <div id="grid-floor"></div> <!-- 地板网格，增加空间参考 -->
-    <div id="status-text">SYSTEM ONLINE // SCANNING CARDS</div>
-
+    <div id="status-text">SYSTEM READY // SWIPE HAND TO SCROLL</div>
+    <div id="cursor-ring"></div>
     <canvas id="bg-canvas"></canvas>
-    <canvas id="effect-canvas"></canvas>
     <canvas id="hand-canvas"></canvas>
     
-    <div id="world-container"></div>
-    
-    <div id="active-card">
-        <div class="inner">
-            <div class="card-face card-back"></div>
-            <div class="card-face card-front"><img id="active-img" src=""></div>
-        </div>
-    </div>
-
+    <div id="card-container"></div>
     <video id="webcam" autoplay playsinline></video>
 
     <script type="module">
         import { FilesetResolver, HandLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.js";
 
-        // 20张牌
-        const tarotImages = [
-            "https://upload.wikimedia.org/wikipedia/commons/9/90/RWS_Tarot_00_Fool.jpg",
-            "https://upload.wikimedia.org/wikipedia/commons/d/de/RWS_Tarot_01_Magician.jpg",
-            "https://upload.wikimedia.org/wikipedia/commons/8/88/RWS_Tarot_02_High_Priestess.jpg",
-            "https://upload.wikimedia.org/wikipedia/commons/d/d2/RWS_Tarot_03_Empress.jpg",
-            "https://upload.wikimedia.org/wikipedia/commons/c/c3/RWS_Tarot_04_Emperor.jpg",
-            "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6b/Wands05.jpg/352px-Wands05.jpg",
-            "https://upload.wikimedia.org/wikipedia/commons/thumb/9/9b/RWS_Tarot_07_Chariot.jpg/353px-RWS_Tarot_07_Chariot.jpg",
-            "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f5/RWS_Tarot_08_Strength.jpg/344px-RWS_Tarot_08_Strength.jpg",
-            "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d4/Swords03.jpg/347px-Swords03.jpg",
-            "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3a/TheLovers.jpg/337px-TheLovers.jpg",
-            "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e6/RWS_Tarot_13_Death.jpg/327px-RWS_Tarot_13_Death.jpg",
-            "https://upload.wikimedia.org/wikipedia/commons/thumb/9/94/RWS_Tarot_15_Devil.jpg/337px-RWS_Tarot_15_Devil.jpg",
-            "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8d/RWS_Tarot_16_Tower.jpg/331px-RWS_Tarot_16_Tower.jpg",
-            "https://upload.wikimedia.org/wikipedia/commons/thumb/d/db/RWS_Tarot_17_Star.jpg/340px-RWS_Tarot_17_Star.jpg",
-            "https://upload.wikimedia.org/wikipedia/commons/thumb/7/7f/RWS_Tarot_18_Moon.jpg/334px-RWS_Tarot_18_Moon.jpg",
-            "https://upload.wikimedia.org/wikipedia/commons/thumb/1/17/RWS_Tarot_19_Sun.jpg/336px-RWS_Tarot_19_Sun.jpg",
-            "https://upload.wikimedia.org/wikipedia/commons/thumb/d/ea/RWS_Tarot_20_Judgement.jpg/342px-RWS_Tarot_20_Judgement.jpg",
-            "https://upload.wikimedia.org/wikipedia/commons/thumb/f/ff/RWS_Tarot_21_World.jpg/350px-RWS_Tarot_21_World.jpg",
-             "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6b/Wands05.jpg/352px-Wands05.jpg",
-             "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3a/TheLovers.jpg/337px-TheLovers.jpg"
+        // 增加到 7 张牌，滑动效果更明显
+        const cardsData = [
+            { img: "https://upload.wikimedia.org/wikipedia/commons/9/90/RWS_Tarot_00_Fool.jpg" },
+            { img: "https://upload.wikimedia.org/wikipedia/commons/d/de/RWS_Tarot_01_Magician.jpg" },
+            { img: "https://upload.wikimedia.org/wikipedia/commons/8/88/RWS_Tarot_02_High_Priestess.jpg" },
+            { img: "https://upload.wikimedia.org/wikipedia/commons/d/d2/RWS_Tarot_03_Empress.jpg" },
+            { img: "https://upload.wikimedia.org/wikipedia/commons/c/c3/RWS_Tarot_04_Emperor.jpg" },
+            { img: "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6b/Wands05.jpg/352px-Wands05.jpg" },
+            { img: "https://upload.wikimedia.org/wikipedia/commons/thumb/9/9b/RWS_Tarot_07_Chariot.jpg/353px-RWS_Tarot_07_Chariot.jpg" }
         ];
 
+        /* --- 核心变量 --- */
         let handLandmarker;
         const video = document.getElementById("webcam");
+        const cursor = document.getElementById("cursor-ring");
         const statusText = document.getElementById("status-text");
-        const worldContainer = document.getElementById("world-container");
-        const activeCard = document.getElementById("active-card");
-        const activeImg = document.getElementById("active-img");
-        const handCtx = document.getElementById("hand-canvas").getContext("2d");
-        const effectCtx = document.getElementById("effect-canvas").getContext("2d");
+        const container = document.getElementById("card-container");
+        
+        // 画布
+        const handCanvas = document.getElementById("hand-canvas");
+        const handCtx = handCanvas.getContext("2d");
+        const bgCanvas = document.getElementById("bg-canvas");
+        const bgCtx = bgCanvas.getContext("2d");
 
-        let cameraAngle = 0;
-        let rotateSpeed = 0;
-        const MAX_ROTATE_SPEED = 1.5; // 稍微减慢旋转速度，更容易看清
-        
-        let handX = 0.5, handY = 0.5;
-        let isPinching = false;
-        let pinchLocked = false;
-        
-        const STATE = { IDLE: 0, GRABBED: 2, DISSOLVING: 3 };
-        let gameState = STATE.IDLE;
-        
-        let cards = [];
-        const RADIUS = 900; // 半径很大，所以看起来远、小
-        const ANGLE_STEP = 360 / tarotImages.length;
+        // --- 滑动系统核心变量 ---
+        let targetScroll = 0; // 目标滚动位置 (0 ~ cards.length-1)
+        let currentScroll = 0; // 当前实际滚动位置 (用于平滑插值)
+        let maxScroll = cardsData.length - 1;
+        let cardEls = [];
+
+        // 骨骼
+        const connections = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[0,9],[9,10],[10,11],[11,12],[0,13],[13,14],[14,15],[15,16],[0,17],[17,18],[18,19],[19,20],[5,9],[9,13],[13,17]];
 
         async function init() {
-            // 构建世界
-            tarotImages.forEach((url, i) => {
+            // 1. 生成卡牌DOM
+            cardsData.forEach((c, i) => {
                 const el = document.createElement("div");
                 el.className = "card-wrapper";
-                el.innerHTML = `<div class="card-face card-back"></div>`; 
-                worldContainer.appendChild(el);
+                // 标记翻转状态和索引
+                el.dataset.index = i;
+                el.dataset.flipped = "false";
                 
-                const angle = i * ANGLE_STEP;
-                // 注意：rotateY(angle + 180) 是为了让牌面（正面）朝内
-                // 但我们显示的是 card-back，card-back 默认就是背面
-                // 所以我们让正面朝外，背面朝圆心（朝向你）
-                el.style.transform = `rotateY(${angle}deg) translateZ(${RADIUS}px)`;
-                
-                cards.push({ el, angle, url });
+                el.innerHTML = `
+                    <div class="card-face card-back"></div>
+                    <div class="card-face card-front"><img src="${c.img}"></div>
+                `;
+                container.appendChild(el);
+                cardEls.push(el);
             });
 
+            // 2. 初始化视觉模型
             const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm");
             handLandmarker = await HandLandmarker.createFromOptions(vision, {
                 baseOptions: {
@@ -246,22 +185,29 @@
                 numHands: 1
             });
 
-            const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 } });
-            video.srcObject = stream;
-            video.addEventListener("loadeddata", () => {
-                resizeCanvas();
-                animate();
-                predict();
-            });
+            // 3. 启动摄像头
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 } });
+                video.srcObject = stream;
+                video.addEventListener("loadeddata", () => {
+                    resizeCanvas();
+                    requestAnimationFrame(renderLoop);
+                    predictLoop();
+                });
+            } catch(e) { statusText.innerText = "CAMERA ERROR"; }
         }
 
         let lastVideoTime = -1;
-        async function predict() {
+        let pinchLocked = false;
+
+        // --- 识别循环 ---
+        async function predictLoop() {
             let now = performance.now();
             if (video.currentTime !== lastVideoTime) {
                 lastVideoTime = video.currentTime;
                 const results = handLandmarker.detectForVideo(video, now);
-                handCtx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+                
+                handCtx.clearRect(0, 0, handCanvas.width, handCanvas.height);
 
                 if (results.landmarks && results.landmarks.length > 0) {
                     const lm = results.landmarks[0];
@@ -269,184 +215,167 @@
 
                     const indexTip = lm[8];
                     const thumbTip = lm[4];
-                    handX = 1 - indexTip.x;
-                    handY = indexTip.y;
+
+                    // 1. 手势滑动映射 (核心逻辑)
+                    // 将手在屏幕 X 轴的位置 (0~1) 映射到 卡牌索引 (0 ~ maxScroll)
+                    // 1 - indexTip.x 是因为摄像头镜像是反的
+                    let handX = (1 - indexTip.x); 
                     
+                    // 增加一点边缘死区，让操作更舒适
+                    // 手在最左边对应 scroll 0 (第一张牌)
+                    // 手在最右边对应 scroll max (最后一张牌)
+                    targetScroll = handX * maxScroll;
+
+                    // 限制范围
+                    targetScroll = Math.max(0, Math.min(maxScroll, targetScroll));
+
+                    // 2. 更新光标位置
+                    const cursorX = handX * window.innerWidth;
+                    const cursorY = indexTip.y * window.innerHeight;
+                    cursor.style.left = `${cursorX}px`;
+                    cursor.style.top = `${cursorY}px`;
+
+                    // 3. 捏合检测 (确认/翻牌)
                     const dist = Math.hypot(indexTip.x - thumbTip.x, indexTip.y - thumbTip.y);
-                    isPinching = dist < 0.05;
+                    const isPinching = dist < 0.05;
 
-                    handleInput();
-                } else {
-                    rotateSpeed *= 0.95;
-                    isPinching = false;
-                    unlockCard();
-                }
-            }
-            requestAnimationFrame(predict);
-        }
-
-        let lockedCardIndex = -1;
-
-        function handleInput() {
-            if (gameState === STATE.GRABBED) {
-                handleGrabbed();
-                return;
-            }
-
-            // 旋转逻辑
-            if (handX < 0.35) {
-                rotateSpeed = -((0.35 - handX) / 0.35) * MAX_ROTATE_SPEED; 
-                statusText.innerText = "<< PANNING";
-            } else if (handX > 0.65) {
-                rotateSpeed = ((handX - 0.65) / 0.35) * MAX_ROTATE_SPEED;
-                statusText.innerText = "PANNING >>";
-            } else {
-                rotateSpeed = 0;
-            }
-
-            // 锁定逻辑
-            if (Math.abs(rotateSpeed) < 0.1 && handX >= 0.35 && handX <= 0.65) {
-                statusText.innerText = "LOCKED // PINCH";
-                rotateSpeed = 0;
-
-                let facingAngle = -cameraAngle % 360;
-                if (facingAngle < 0) facingAngle += 360;
-
-                let closestIdx = -1;
-                let minDiff = 1000;
-
-                cards.forEach((card, i) => {
-                    let diff = Math.abs(card.angle - facingAngle);
-                    if (diff > 180) diff = 360 - diff;
-                    if (diff < minDiff) {
-                        minDiff = diff;
-                        closestIdx = i;
+                    if (isPinching) {
+                        cursor.classList.add("pinching");
+                        if (!pinchLocked) {
+                            // 捏合时，翻开当前正中间的那张牌
+                            // Math.round(currentScroll) 找到当前最接近中心的卡牌索引
+                            triggerFlip(Math.round(currentScroll));
+                            pinchLocked = true;
+                        }
+                    } else {
+                        cursor.classList.remove("pinching");
+                        pinchLocked = false;
                     }
-                });
 
-                if (minDiff < 12 && handY > 0.3 && handY < 0.7) {
-                    lockCard(closestIdx);
+                    statusText.innerText = isPinching ? "REVEALING FATE..." : "SWIPE TO BROWSE / PINCH TO REVEAL";
+
                 } else {
-                    unlockCard();
+                    // 没有手时，不自动回正，保持在原地或慢慢归零
                 }
-            } else {
-                unlockCard();
             }
-
-            if (!isPinching) pinchLocked = false;
+            requestAnimationFrame(predictLoop);
         }
 
-        function lockCard(index) {
-            if (lockedCardIndex !== index) {
-                unlockCard();
-                lockedCardIndex = index;
-                cards[index].el.classList.add('locked');
-            }
-            if (isPinching && !pinchLocked) {
-                extractCard(index);
-            }
+        // --- 渲染循环 (处理平滑动画) ---
+        function renderLoop() {
+            // 平滑插值：让 scroll 慢慢接近 target
+            // 0.1 是平滑系数，数值越小越“肉”，越大越跟手
+            currentScroll += (targetScroll - currentScroll) * 0.1;
+
+            updateCards3D();
+            updateBgParticles();
+            requestAnimationFrame(renderLoop);
         }
 
-        function unlockCard() {
-            if (lockedCardIndex !== -1) {
-                cards[lockedCardIndex].el.classList.remove('locked');
-                lockedCardIndex = -1;
-            }
-        }
-
-        function extractCard(index) {
-            gameState = STATE.GRABBED;
-            pinchLocked = true;
-            statusText.innerText = "FATE REVEALED";
-
-            const data = cards[index];
-            activeImg.src = data.url;
-            activeCard.style.display = 'block';
-            data.el.style.opacity = 0; // 隐藏原卡
-
-            setTimeout(() => activeCard.classList.add('flipped'), 50);
-        }
-
-        function handleGrabbed() {
-            const x = handX * window.innerWidth;
-            const y = handY * window.innerHeight;
+        // --- 核心：3D 卡牌排列算法 ---
+        function updateCards3D() {
+            const spacing = 220; // 卡牌间距 px
             
-            // 关键：抓取时放大，对比背景的小卡牌
-            // 这里的 scale(1.3) 是相对于 card-width 200px 的
-            activeCard.style.transform = `translate(${x - 100}px, ${y - 175}px) scale(1.4)`;
+            cardEls.forEach((card, i) => {
+                // 计算每张卡牌相对于“当前滚动位置”的偏移量
+                // 如果 currentScroll 是 2，那么第 2 张牌的 offset 就是 0 (在正中间)
+                const offset = i - currentScroll; 
+                
+                // 1. 位移 (X轴)
+                const translateX = offset * spacing;
+                
+                // 2. 缩放 (中间大，两边小)
+                // Math.abs(offset) 越大，离中心越远
+                const scale = Math.max(0.7, 1 - Math.abs(offset) * 0.15);
+                
+                // 3. 旋转 (Y轴 - Coverflow 效果)
+                // 左边的牌向右转，右边的牌向左转
+                let rotateY = 0;
+                if (offset < -0.5) rotateY = 25; // 左侧
+                else if (offset > 0.5) rotateY = -25; // 右侧
+                
+                // 4. Z轴 (景深)
+                // 离中心越远，Z轴越靠后
+                const translateZ = -Math.abs(offset) * 100;
+                
+                // 5. Z-Index (层级)
+                // 离中心越近，层级越高，确保中间的压住两边的
+                const zIndex = 100 - Math.round(Math.abs(offset) * 10);
+                card.style.zIndex = zIndex;
 
-            if (!isPinching) {
-                dissolve();
+                // 6. 翻转逻辑 (如果已翻开)
+                const isFlipped = card.dataset.flipped === "true";
+                const flipRotate = isFlipped ? 180 : 0;
+
+                // 组合变换
+                // 注意：rotateY 包含基础旋转 + 翻牌旋转
+                card.style.transform = `
+                    translateX(${translateX}px) 
+                    translateZ(${translateZ}px) 
+                    rotateY(${rotateY + flipRotate}deg) 
+                    scale(${scale})
+                `;
+
+                // 视觉高亮
+                if (Math.abs(offset) < 0.5) card.classList.add('active');
+                else card.classList.remove('active');
+            });
+        }
+
+        function triggerFlip(index) {
+            // 边界检查
+            if (index < 0 || index >= cardEls.length) return;
+            
+            const card = cardEls[index];
+            if (card.dataset.flipped === "false") {
+                card.dataset.flipped = "true";
+                // 爆炸特效
+                const rect = card.getBoundingClientRect();
+                explode(rect.left + rect.width/2, rect.top + rect.height/2);
             }
         }
 
-        function dissolve() {
-            gameState = STATE.DISSOLVING;
-            const rect = activeCard.getBoundingClientRect();
-            spawnParticles(rect.left + rect.width/2, rect.top + rect.height/2);
+        // --- 辅助绘图与粒子 (保持不变) ---
+        function drawSkeleton(landmarks) {
+            handCtx.lineWidth = 2; handCtx.lineCap = "round";
+            handCtx.strokeStyle = "rgba(255, 255, 255, 0.3)";
             
-            activeCard.style.display = 'none';
-            activeCard.classList.remove('flipped');
-            
-            if (lockedCardIndex !== -1) {
-                const el = cards[lockedCardIndex].el;
-                setTimeout(() => {
-                    el.style.opacity = 1;
-                    el.classList.remove('locked');
-                }, 300);
-            }
-            
-            setTimeout(() => {
-                gameState = STATE.IDLE;
-                lockedCardIndex = -1;
-            }, 500);
-        }
+            connections.forEach(([i, j]) => {
+                const p1 = landmarks[i], p2 = landmarks[j];
+                handCtx.beginPath();
+                handCtx.moveTo((1-p1.x)*handCanvas.width, p1.y*handCanvas.height);
+                handCtx.lineTo((1-p2.x)*handCanvas.width, p2.y*handCanvas.height);
+                handCtx.stroke();
+            });
 
-        function animate() {
-            cameraAngle += rotateSpeed;
-            worldContainer.style.transform = `rotateY(${cameraAngle}deg)`;
-            updateParticles();
-            requestAnimationFrame(animate);
+            landmarks.forEach((p, index) => {
+                const x = (1-p.x)*handCanvas.width, y = p.y*handCanvas.height;
+                handCtx.beginPath();
+                if ([4,8,12,16,20].includes(index)) {
+                    handCtx.fillStyle = "#00ff9d"; handCtx.arc(x, y, 4, 0, 2*Math.PI);
+                } else {
+                    handCtx.fillStyle = "rgba(255,255,255,0.6)"; handCtx.arc(x, y, 2, 0, 2*Math.PI);
+                }
+                handCtx.fill();
+            });
         }
 
         let particles = [];
-        function spawnParticles(x, y) {
+        function explode(x, y) {
             for(let i=0; i<60; i++) {
-                const a = Math.random()*Math.PI*2, v = Math.random()*20+5;
-                particles.push({x,y,vx:Math.cos(a)*v,vy:Math.sin(a)*v,life:1,color:'#00ff9d'});
+                const angle = Math.random()*Math.PI*2, v = Math.random()*15+5;
+                particles.push({x, y, vx:Math.cos(angle)*v, vy:Math.sin(angle)*v, life:1, color:'#00ff9d'});
             }
         }
-        function updateParticles() {
-            effectCtx.clearRect(0,0,window.innerWidth,window.innerHeight);
-            for(let i=particles.length-1;i>=0;i--) {
-                let p=particles[i]; p.x+=p.vx; p.y+=p.vy; p.life-=0.03;
+        function updateBgParticles() {
+            bgCtx.clearRect(0,0,bgCanvas.width,bgCanvas.height);
+            for(let i=particles.length-1; i>=0; i--) {
+                let p=particles[i]; p.x+=p.vx; p.y+=p.vy; p.vx*=0.9; p.vy*=0.9; p.life-=0.03;
                 if(p.life<=0) particles.splice(i,1);
-                else { effectCtx.globalAlpha=p.life; effectCtx.fillStyle=p.color; effectCtx.beginPath(); effectCtx.arc(p.x,p.y,3,0,Math.PI*2); effectCtx.fill(); }
+                else { bgCtx.globalAlpha=p.life; bgCtx.fillStyle=p.color; bgCtx.beginPath(); bgCtx.arc(p.x,p.y,2,0,Math.PI*2); bgCtx.fill(); }
             }
-            effectCtx.globalAlpha=1;
         }
-
-        const connections = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[0,9],[9,10],[10,11],[11,12],[0,13],[13,14],[14,15],[15,16],[0,17],[17,18],[18,19],[19,20],[5,9],[9,13],[13,17]];
-        function drawSkeleton(lm) {
-            handCtx.lineWidth = 2; handCtx.lineCap = "round";
-            handCtx.strokeStyle = "rgba(0, 255, 157, 0.4)";
-            connections.forEach(([i,j])=>{
-                const p1=lm[i],p2=lm[j];
-                handCtx.beginPath();
-                handCtx.moveTo((1-p1.x)*window.innerWidth,p1.y*window.innerHeight);
-                handCtx.lineTo((1-p2.x)*window.innerWidth,p2.y*window.innerHeight);
-                handCtx.stroke();
-            });
-            const cx=(1-lm[8].x)*window.innerWidth, cy=lm[8].y*window.innerHeight;
-            handCtx.beginPath(); handCtx.arc(cx,cy,6,0,Math.PI*2); handCtx.fillStyle=isPinching?"#fff":"#00ff9d"; handCtx.fill();
-        }
-
-        function resizeCanvas() {
-            const w=window.innerWidth, h=window.innerHeight;
-            document.getElementById("bg-canvas").width=w; document.getElementById("bg-canvas").height=h;
-            document.getElementById("effect-canvas").width=w; document.getElementById("effect-canvas").height=h;
-            document.getElementById("hand-canvas").width=w; document.getElementById("hand-canvas").height=h;
-        }
+        function resizeCanvas() { handCanvas.width = bgCanvas.width = window.innerWidth; handCanvas.height = bgCanvas.height = window.innerHeight; }
         window.onresize = resizeCanvas;
 
         init();
