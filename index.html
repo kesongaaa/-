@@ -3,16 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cyber Tarot - True Immersion</title>
+    <title>Cyber Tarot - Close Orbit</title>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.js" crossorigin="anonymous"></script>
     <style>
         :root {
             --bg-color: #000000;
             --tech-green: #00ff9d;
-            --card-width: 240px; 
-            --card-height: 400px;
-            /* 关键修改：极大的半径，形成包裹感 */
-            --radius: 1100px; 
+            /* 1. 卡牌尺寸大幅增加，还原视频里的“巨大感” */
+            --card-width: 260px;
+            --card-height: 440px;
+            /* 2. 半径缩小，把卡牌拉近到眼前 */
+            --radius: 650px; 
         }
 
         body {
@@ -26,8 +27,15 @@
             justify-content: center;
             align-items: center;
             cursor: none;
-            /* 关键修改：视距略小于半径，创造广角镜头感 */
+            /* 3. 视距匹配，产生强烈的广角透视感 */
             perspective: 800px; 
+        }
+
+        /* 沉浸式暗角 */
+        #vignette {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: radial-gradient(circle, transparent 50%, #000 100%);
+            pointer-events: none; z-index: 50;
         }
 
         /* 画布层 */
@@ -36,8 +44,7 @@
         #effect-canvas { z-index: 60; }
         #hand-canvas { z-index: 70; opacity: 0.8; }
 
-        /* 1. 世界容器 */
-        /* 这个容器就是你的头，旋转它就是转头 */
+        /* 世界容器：你就在圆心 */
         #world-container {
             position: absolute;
             top: 50%; left: 50%;
@@ -53,48 +60,52 @@
             left: calc(var(--card-width) * -0.5);
             top: calc(var(--card-height) * -0.5);
             transform-style: preserve-3d;
-            /* 卡牌背面不可见，优化性能且符合物理 */
+            /* 关键：确保背面对着圆心时可见 */
             backface-visibility: hidden; 
         }
 
         .card-face {
             position: absolute; width: 100%; height: 100%;
             backface-visibility: hidden;
-            border-radius: 12px;
-            box-shadow: 0 0 30px rgba(0,0,0,0.95); /* 更深的阴影 */
+            border-radius: 16px; /* 更圆润的边角 */
+            box-shadow: 0 0 40px rgba(0,0,0,0.8);
         }
 
+        /* 卡背 */
         .card-back {
-            background: #050505;
-            border: 2px solid #333;
+            background: #0a0a0a;
+            border: 3px solid #444; /* 加粗边框 */
             display: flex; justify-content: center; align-items: center;
-            transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
+            transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
         }
         /* 卡背纹理 */
         .card-back::after {
-            content: ''; position: absolute; top: 10px; left: 10px; right: 10px; bottom: 10px;
-            border: 1px solid rgba(255,255,255,0.1);
+            content: ''; width: 80%; height: 80%;
+            border: 2px solid rgba(255,255,255,0.05);
+            border-radius: 8px;
         }
 
-        /* 锁定状态：稍微拉近，产生对焦感 */
+        /* 选中状态：上浮 + 变大 + 绿光 */
         .card-wrapper.locked .card-back {
             border-color: var(--tech-green);
-            box-shadow: 0 0 80px var(--tech-green), inset 0 0 20px var(--tech-green);
-            transform: scale(1.1) translateZ(50px); /* 向圆心（你）靠近 */
+            box-shadow: 0 0 100px var(--tech-green), inset 0 0 30px var(--tech-green);
+            /* 关键：不仅上浮(Y)，还向你靠近(Z) */
+            transform: translateY(-80px) scale(1.1) translateZ(50px);
         }
 
+        /* 卡面 */
         .card-front {
             background: #111;
-            transform: rotateX(180deg);
+            /* 预先旋转180度，因为它是背面朝你的 */
+            transform: rotateY(180deg);
         }
-        .card-front img { width: 100%; height: 100%; object-fit: cover; border-radius: 12px; }
+        .card-front img { width: 100%; height: 100%; object-fit: cover; border-radius: 16px; }
 
-        /* 2. 抽出的卡牌 (UI Overlay) */
+        /* 抽出的卡牌 (UI层) */
         #active-card {
             position: fixed;
             width: var(--card-width);
             height: var(--card-height);
-            /* 初始隐藏，位置由JS动态计算 */
             top: 0; left: 0;
             transform-style: preserve-3d;
             z-index: 100;
@@ -105,24 +116,18 @@
         #active-card .inner {
             width: 100%; height: 100%;
             transform-style: preserve-3d;
-            transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            transition: transform 0.5s cubic-bezier(0.19, 1, 0.22, 1);
         }
 
+        /* 翻转动画：绕Y轴转180 */
         #active-card.flipped .inner {
-            transform: rotateX(180deg);
+            transform: rotateY(180deg); 
         }
 
-        /* 沉浸感遮罩 */
-        #vignette {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: radial-gradient(circle, transparent 40%, #000 100%);
-            pointer-events: none; z-index: 50;
-        }
-        
         #status-text {
-            position: fixed; bottom: 15%; width: 100%; text-align: center;
-            color: rgba(255,255,255,0.4); font-size: 14px; letter-spacing: 4px;
-            text-shadow: 0 0 10px #000; z-index: 80;
+            position: fixed; bottom: 12%; width: 100%; text-align: center;
+            color: rgba(255,255,255,0.4); font-size: 14px; letter-spacing: 2px;
+            text-shadow: 0 0 10px #000; z-index: 80; font-weight: bold;
         }
 
         #webcam { display: none; }
@@ -130,15 +135,17 @@
 </head>
 <body>
 
-    <div id="status-text">SYSTEM READY // YOU ARE THE CENTER</div>
+    <div id="status-text">SYSTEM READY</div>
     <div id="vignette"></div>
 
     <canvas id="bg-canvas"></canvas>
     <canvas id="effect-canvas"></canvas>
     <canvas id="hand-canvas"></canvas>
     
+    <!-- 世界容器 -->
     <div id="world-container"></div>
     
+    <!-- 抓取层 -->
     <div id="active-card">
         <div class="inner">
             <div class="card-face card-back"></div>
@@ -151,7 +158,7 @@
     <script type="module">
         import { FilesetResolver, HandLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.js";
 
-        // 24张牌，确保圆环足够密集，包围感更强
+        // 16 张牌，数量适中，配合较小的半径，刚好围成一圈
         const tarotImages = [
             "https://upload.wikimedia.org/wikipedia/commons/9/90/RWS_Tarot_00_Fool.jpg",
             "https://upload.wikimedia.org/wikipedia/commons/d/de/RWS_Tarot_01_Magician.jpg",
@@ -168,15 +175,7 @@
             "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8d/RWS_Tarot_16_Tower.jpg/331px-RWS_Tarot_16_Tower.jpg",
             "https://upload.wikimedia.org/wikipedia/commons/thumb/d/db/RWS_Tarot_17_Star.jpg/340px-RWS_Tarot_17_Star.jpg",
             "https://upload.wikimedia.org/wikipedia/commons/thumb/7/7f/RWS_Tarot_18_Moon.jpg/334px-RWS_Tarot_18_Moon.jpg",
-            "https://upload.wikimedia.org/wikipedia/commons/thumb/1/17/RWS_Tarot_19_Sun.jpg/336px-RWS_Tarot_19_Sun.jpg",
-            "https://upload.wikimedia.org/wikipedia/commons/thumb/d/ea/RWS_Tarot_20_Judgement.jpg/342px-RWS_Tarot_20_Judgement.jpg",
-            "https://upload.wikimedia.org/wikipedia/commons/thumb/f/ff/RWS_Tarot_21_World.jpg/350px-RWS_Tarot_21_World.jpg",
-            "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6b/Wands05.jpg/352px-Wands05.jpg", 
-            "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3a/TheLovers.jpg/337px-TheLovers.jpg",
-            "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e6/RWS_Tarot_13_Death.jpg/327px-RWS_Tarot_13_Death.jpg",
-            "https://upload.wikimedia.org/wikipedia/commons/thumb/9/94/RWS_Tarot_15_Devil.jpg/337px-RWS_Tarot_15_Devil.jpg",
-            "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8d/RWS_Tarot_16_Tower.jpg/331px-RWS_Tarot_16_Tower.jpg",
-            "https://upload.wikimedia.org/wikipedia/commons/thumb/d/db/RWS_Tarot_17_Star.jpg/340px-RWS_Tarot_17_Star.jpg"
+            "https://upload.wikimedia.org/wikipedia/commons/thumb/1/17/RWS_Tarot_19_Sun.jpg/336px-RWS_Tarot_19_Sun.jpg"
         ];
 
         let handLandmarker;
@@ -188,10 +187,10 @@
         const handCtx = document.getElementById("hand-canvas").getContext("2d");
         const effectCtx = document.getElementById("effect-canvas").getContext("2d");
 
-        // 视角变量
+        // 旋转参数
         let cameraAngle = 0;
         let rotateSpeed = 0;
-        const MAX_ROTATE_SPEED = 3.0; // 加快一点转速
+        const MAX_ROTATE_SPEED = 2.0;
         
         // 游戏状态
         let handX = 0.5, handY = 0.5;
@@ -202,8 +201,8 @@
         let gameState = STATE.IDLE;
         
         let cards = [];
-        // 半径设定：必须非常大才能把你“包”在里面
-        const RADIUS = 1100; 
+        // 半径：650px (拉近了距离)
+        const RADIUS = 650; 
         const ANGLE_STEP = 360 / tarotImages.length;
 
         async function init() {
@@ -211,12 +210,13 @@
             tarotImages.forEach((url, i) => {
                 const el = document.createElement("div");
                 el.className = "card-wrapper";
+                // 注意：卡牌是 rotateY(180deg) 的卡背，所以这里放卡背
                 el.innerHTML = `<div class="card-face card-back"></div>`; 
                 worldContainer.appendChild(el);
                 
                 const angle = i * ANGLE_STEP;
-                // 关键修正：先旋转Y轴(决定方向)，再推向Z轴(半径)
-                // 这样卡牌的背面是朝向圆心的（朝向你）
+                // 先旋转角度，再推出去。由于我们站在圆心看，背对着圆心
+                // 默认 0度 是 Z轴正向。
                 el.style.transform = `rotateY(${angle}deg) translateZ(${RADIUS}px)`;
                 
                 cards.push({ el, angle, url });
@@ -256,6 +256,7 @@
 
                     const indexTip = lm[8];
                     const thumbTip = lm[4];
+                    // 镜像
                     handX = 1 - indexTip.x;
                     handY = indexTip.y;
                     
@@ -264,7 +265,7 @@
 
                     handleInput();
                 } else {
-                    rotateSpeed *= 0.95; // 缓慢减速
+                    rotateSpeed *= 0.9;
                     isPinching = false;
                     unlockCard();
                 }
@@ -281,50 +282,51 @@
                 return;
             }
 
-            // 1. 旋转控制 (头控)
-            // 手势区域：0.3 (左) --- 0.7 (右)
+            // 1. 旋转控制 (头控模拟)
+            // 手放两边 -> 旋转
             if (handX < 0.3) {
+                // 手在左，世界顺时针转 (感觉像往左看)
                 const strength = (0.3 - handX) / 0.3;
                 rotateSpeed = -strength * MAX_ROTATE_SPEED; 
-                statusText.innerText = "<<< TURNING LEFT";
+                statusText.innerText = "<<< PANNING LEFT";
             } else if (handX > 0.7) {
+                // 手在右，世界逆时针转
                 const strength = (handX - 0.7) / 0.3;
                 rotateSpeed = strength * MAX_ROTATE_SPEED;
-                statusText.innerText = "TURNING RIGHT >>>";
+                statusText.innerText = "PANNING RIGHT >>>";
             } else {
                 rotateSpeed = 0;
             }
 
-            // 2. 锁定检测
-            // 只有停止旋转且手在中间
+            // 2. 锁定与上浮 (Pointing)
+            // 手在中间区域
             if (Math.abs(rotateSpeed) < 0.1 && handX >= 0.3 && handX <= 0.7) {
-                statusText.innerText = "LOCKED // PINCH TO EXTRACT";
                 rotateSpeed = 0;
 
-                // 计算视线正前方的卡牌
-                // cameraAngle 是世界旋转的角度。正前方就是 -cameraAngle
+                // 计算正前方的角度 ( -cameraAngle )
                 let facingAngle = -cameraAngle % 360;
                 if (facingAngle < 0) facingAngle += 360;
 
-                // 寻找最接近 facingAngle 的卡牌
+                // 找最近的牌
                 let closestIdx = -1;
                 let minDiff = 1000;
 
                 cards.forEach((card, i) => {
-                    // 处理环形角度差 (比如 359度 和 1度 差2度)
                     let diff = Math.abs(card.angle - facingAngle);
                     if (diff > 180) diff = 360 - diff;
-                    
                     if (diff < minDiff) {
                         minDiff = diff;
                         closestIdx = i;
                     }
                 });
 
-                // 容差范围 10度，且食指指向屏幕中央
-                if (minDiff < 10 && handY > 0.2 && handY < 0.8) {
+                // 角度对准了，还要看食指是否指着它 (Y轴高度)
+                // 容差 15度，高度在屏幕中部
+                if (minDiff < 15 && handY > 0.3 && handY < 0.7) {
+                    statusText.innerText = "LOCKED // PINCH TO PULL";
                     lockCard(closestIdx);
                 } else {
+                    statusText.innerText = "POINT TO SELECT";
                     unlockCard();
                 }
             } else {
@@ -340,6 +342,7 @@
                 lockedCardIndex = index;
                 cards[index].el.classList.add('locked');
             }
+            // 捏合抽取
             if (isPinching && !pinchLocked) {
                 extractCard(index);
             }
@@ -355,16 +358,16 @@
         function extractCard(index) {
             gameState = STATE.GRABBED;
             pinchLocked = true;
-            statusText.innerText = "FATE REVEALED";
+            statusText.innerText = "FATE REVEALED // OPEN HAND TO DISSOLVE";
 
             const data = cards[index];
             activeImg.src = data.url;
             activeCard.style.display = 'block';
             
-            // 隐藏原卡牌
+            // 隐藏原位置卡牌
             data.el.style.opacity = 0;
 
-            // 翻转动画
+            // 翻转并展示
             setTimeout(() => activeCard.classList.add('flipped'), 50);
         }
 
@@ -372,8 +375,10 @@
             // 卡牌跟随
             const x = handX * window.innerWidth;
             const y = handY * window.innerHeight;
-            activeCard.style.transform = `translate(${x - 120}px, ${y - 200}px) scale(1.1)`;
+            // 调整偏移，让卡牌在指尖下方一点，且放大
+            activeCard.style.transform = `translate(${x - 130}px, ${y - 220}px) scale(1.1)`;
 
+            // 释放检测
             if (!isPinching) {
                 dissolve();
             }
@@ -386,7 +391,8 @@
             
             activeCard.style.display = 'none';
             activeCard.classList.remove('flipped');
-
+            
+            // 恢复原卡牌
             if (lockedCardIndex !== -1) {
                 const el = cards[lockedCardIndex].el;
                 setTimeout(() => {
@@ -404,6 +410,7 @@
         function animate() {
             // 旋转世界
             cameraAngle += rotateSpeed;
+            // 关键：旋转世界容器，模拟自己在转
             worldContainer.style.transform = `rotateY(${cameraAngle}deg)`;
             
             updateParticles();
@@ -414,7 +421,7 @@
         let particles = [];
         function spawnParticles(x, y) {
             for(let i=0; i<80; i++) {
-                const a = Math.random()*Math.PI*2, v = Math.random()*15+5;
+                const a = Math.random()*Math.PI*2, v = Math.random()*20+5;
                 particles.push({x,y,vx:Math.cos(a)*v,vy:Math.sin(a)*v,life:1,color:'#00ff9d'});
             }
         }
@@ -423,7 +430,7 @@
             for(let i=particles.length-1;i>=0;i--) {
                 let p=particles[i]; p.x+=p.vx; p.y+=p.vy; p.life-=0.03;
                 if(p.life<=0) particles.splice(i,1);
-                else { effectCtx.globalAlpha=p.life; effectCtx.fillStyle=p.color; effectCtx.beginPath(); effectCtx.arc(p.x,p.y,2,0,Math.PI*2); effectCtx.fill(); }
+                else { effectCtx.globalAlpha=p.life; effectCtx.fillStyle=p.color; effectCtx.beginPath(); effectCtx.arc(p.x,p.y,3,0,Math.PI*2); effectCtx.fill(); }
             }
             effectCtx.globalAlpha=1;
         }
