@@ -3,14 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cyber Tarot - Infinite Grasp</title>
+    <title>Cyber Tarot - Orbit System</title>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.js" crossorigin="anonymous"></script>
     <style>
         :root {
             --bg-color: #000000;
             --tech-green: #00ff9d;
-            --card-width: 180px;
-            --card-height: 320px;
+            --tech-alert: #ff0055;
+            --card-width: 160px;
+            --card-height: 280px;
+            --radius: 550px; /* 圆环半径，越大越壮观 */
         }
 
         body {
@@ -24,32 +26,22 @@
             justify-content: center;
             align-items: center;
             cursor: none;
-            perspective: 1200px;
+            perspective: 1000px; /* 镜头视角 */
         }
 
         /* 画布层 */
-        #bg-canvas, #hand-canvas, #effect-canvas {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;
-        }
+        canvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
         #bg-canvas { z-index: 0; }
-        #hand-canvas { z-index: 60; } /* 骨骼在最上层 */
-        #effect-canvas { z-index: 55; } /* 粒子特效层 */
+        #effect-canvas { z-index: 60; }
+        #hand-canvas { z-index: 70; opacity: 0.8; }
 
-        /* 1. 无限长廊容器 */
-        #carousel-container {
+        /* 1. 3D 圆柱容器 */
+        #orbit-system {
             position: absolute;
-            top: 55%; /* 稍微靠下，留出空间给上浮动画 */
-            left: 50%;
+            top: 50%; left: 50%;
             width: 0; height: 0;
             transform-style: preserve-3d;
             z-index: 10;
-            transition: opacity 0.3s;
-        }
-        
-        /* 当卡牌被抽出时，背景变暗 */
-        body.viewing #carousel-container {
-            opacity: 0.3;
-            filter: blur(5px);
         }
 
         .card-wrapper {
@@ -59,70 +51,79 @@
             left: calc(var(--card-width) * -0.5);
             top: calc(var(--card-height) * -0.5);
             transform-style: preserve-3d;
-            will-change: transform; /* 性能优化 */
+            /* 关键：不再使用 transition，全部由 JS 驱动物理帧 */
         }
 
         .card-face {
             position: absolute; width: 100%; height: 100%;
-            backface-visibility: hidden;
+            backface-visibility: hidden; /* 背面不可见，增强真实感 */
             border-radius: 8px;
-            box-shadow: 0 0 15px rgba(0,0,0,0.8);
+            box-shadow: 0 0 10px rgba(0,0,0,0.8);
         }
 
         .card-back {
             background: #080808;
             border: 2px solid #333;
             display: flex; justify-content: center; align-items: center;
-            transition: border-color 0.2s, box-shadow 0.2s;
+            transition: box-shadow 0.2s, border-color 0.2s, transform 0.2s;
         }
         .card-back::after {
-            content: ''; width: 60%; height: 60%;
-            border: 1px solid rgba(255,255,255,0.1);
-            transform: rotate(45deg);
+            content: '۞'; font-size: 40px; color: #333;
         }
 
-        /* 2. 悬浮状态 (Ready to pick) */
-        .card-wrapper.ready .card-back {
+        /* 只有被食指指着且旋转停止时才有的状态 */
+        .card-wrapper.hovered .card-back {
             border-color: var(--tech-green);
-            box-shadow: 0 0 40px var(--tech-green);
+            box-shadow: 0 0 50px var(--tech-green);
+            transform: scale(1.1) translateY(-30px); /* 轻微上浮 */
         }
 
         .card-front {
             background: #111;
-            /* 垂直翻转的背面是正面 */
-            transform: rotateX(180deg); 
+            transform: rotateX(180deg); /* 预先垂直翻转，等待抽取 */
         }
         .card-front img { width: 100%; height: 100%; object-fit: cover; border-radius: 8px; }
 
-        /* 3. 被抽出的卡牌 (Floating Card) */
+        /* 2. 抽出的卡牌 (The Active Card) */
         #active-card {
             position: fixed;
             width: var(--card-width);
             height: var(--card-height);
-            top: 50%; left: 50%;
+            top: 0; left: 0; /* 位置由JS控制 */
             transform-style: preserve-3d;
-            z-index: 50;
-            pointer-events: none; /* 让鼠标事件穿透 */
-            display: none; /* 初始隐藏 */
+            z-index: 100;
+            display: none;
+            pointer-events: none;
         }
         
-        /* 抽出时的翻转动画 */
-        #active-card .card-inner {
-            position: relative;
+        #active-card .inner {
             width: 100%; height: 100%;
             transform-style: preserve-3d;
-            transition: transform 0.1s; /* 跟手无需延迟，只有翻转需要 */
-        }
-        
-        #active-card.revealed .card-inner {
-            transform: rotateX(180deg); /* 垂直翻转 */
+            transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
         }
 
-        /* UI 文字 */
+        #active-card.flipped .inner {
+            transform: rotateX(180deg); /* 垂直翻转展示正面 */
+        }
+
+        /* UI */
+        #ui-layer {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none; z-index: 5;
+        }
+        .zone-indicator {
+            position: absolute; top: 45%; width: 100px; height: 100px;
+            border: 1px dashed rgba(255,255,255,0.1);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 20px; opacity: 0; transition: opacity 0.3s;
+        }
+        #left-zone { left: 50px; }
+        #right-zone { right: 50px; }
+        
         #status-text {
-            position: fixed; top: 10%; width: 100%; text-align: center;
+            position: fixed; bottom: 10%; width: 100%; text-align: center;
             color: rgba(255,255,255,0.5); font-size: 14px; letter-spacing: 2px;
-            z-index: 100; text-shadow: 0 0 10px #000;
+            text-shadow: 0 0 10px #000;
         }
 
         #webcam { display: none; }
@@ -130,18 +131,24 @@
 </head>
 <body>
 
-    <div id="status-text">SYSTEM READY // SCROLL & GRASP</div>
+    <div id="status-text">SYSTEM INITIALIZING...</div>
     
+    <!-- 视觉辅助区 -->
+    <div id="ui-layer">
+        <div id="left-zone" class="zone-indicator">◀ ROTATE</div>
+        <div id="right-zone" class="zone-indicator">ROTATE ▶</div>
+    </div>
+
     <canvas id="bg-canvas"></canvas>
     <canvas id="effect-canvas"></canvas>
     <canvas id="hand-canvas"></canvas>
     
-    <!-- 无限滚动层 -->
-    <div id="carousel-container"></div>
+    <!-- 3D 舞台 -->
+    <div id="orbit-system"></div>
     
-    <!-- 抓取层 (独立的DOM，用于脱离文档流) -->
+    <!-- 抓取层 -->
     <div id="active-card">
-        <div class="card-inner">
+        <div class="inner">
             <div class="card-face card-back"></div>
             <div class="card-face card-front"><img id="active-img" src=""></div>
         </div>
@@ -152,8 +159,8 @@
     <script type="module">
         import { FilesetResolver, HandLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.js";
 
-        // 扩充数据源以模拟无限库
-        const rawData = [
+        // 扩充数据量以形成圆环
+        const tarotImages = [
             "https://upload.wikimedia.org/wikipedia/commons/9/90/RWS_Tarot_00_Fool.jpg",
             "https://upload.wikimedia.org/wikipedia/commons/d/de/RWS_Tarot_01_Magician.jpg",
             "https://upload.wikimedia.org/wikipedia/commons/8/88/RWS_Tarot_02_High_Priestess.jpg",
@@ -161,58 +168,59 @@
             "https://upload.wikimedia.org/wikipedia/commons/c/c3/RWS_Tarot_04_Emperor.jpg",
             "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6b/Wands05.jpg/352px-Wands05.jpg",
             "https://upload.wikimedia.org/wikipedia/commons/thumb/9/9b/RWS_Tarot_07_Chariot.jpg/353px-RWS_Tarot_07_Chariot.jpg",
-            "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3a/TheLovers.jpg/337px-TheLovers.jpg",
             "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f5/RWS_Tarot_08_Strength.jpg/344px-RWS_Tarot_08_Strength.jpg",
-            "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d4/Swords03.jpg/347px-Swords03.jpg"
+            "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d4/Swords03.jpg/347px-Swords03.jpg",
+            "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3a/TheLovers.jpg/337px-TheLovers.jpg",
+            "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e6/RWS_Tarot_13_Death.jpg/327px-RWS_Tarot_13_Death.jpg",
+            "https://upload.wikimedia.org/wikipedia/commons/thumb/9/94/RWS_Tarot_15_Devil.jpg/337px-RWS_Tarot_15_Devil.jpg"
         ];
 
-        /* --- 状态机 --- */
-        const STATE = {
-            SCROLLING: 'scrolling', // 浏览模式
-            GRABBED: 'grabbed',     // 已抓取，正在查看
-            DISSOLVING: 'dissolving' // 正在消散
-        };
-        let currentState = STATE.SCROLLING;
-
-        /* --- 变量 --- */
+        /* --- 核心变量 --- */
         let handLandmarker;
         const video = document.getElementById("webcam");
         const statusText = document.getElementById("status-text");
-        const carousel = document.getElementById("carousel-container");
+        const orbitSystem = document.getElementById("orbit-system");
         const activeCard = document.getElementById("active-card");
         const activeImg = document.getElementById("active-img");
         
         // 画布
         const handCtx = document.getElementById("hand-canvas").getContext("2d");
         const effectCtx = document.getElementById("effect-canvas").getContext("2d");
-        const bgCtx = document.getElementById("bg-canvas").getContext("2d");
-
-        // 滚动逻辑
-        let scrollPos = 0;   // 0 到 无穷大
-        let targetScroll = 0;
-        const CARD_SPACING = 240;
-        const TOTAL_CARDS = rawData.length;
         
-        // DOM 池 (只创建一定数量的DIV来循环显示)
-        const VISIBLE_COUNT = 7; 
-        let domPool = [];
-
-        // 手势数据
-        let handX = 0.5, handY = 0.5; // 0~1 normalized
+        // 旋转物理量
+        let currentRotation = 0;
+        let rotationSpeed = 0;
+        const MAX_SPEED = 2.0; // 最大旋转速度
+        const DAMPING = 0.95; // 惯性阻尼
+        const DEAD_ZONE_START = 0.35; // 中间区域起始 (0-1)
+        const DEAD_ZONE_END = 0.65;   // 中间区域结束 (0-1)
+        
+        // 手势状态
+        let handX = 0.5, handY = 0.5;
         let isPinching = false;
+        let pinchLocked = false;
         
-        // 抓取逻辑
-        let grabbedCardIndex = -1; // 当前被抓的是 rawData 里的哪张
+        // 游戏状态
+        const STATE = { IDLE: 0, HOVERING: 1, GRABBED: 2, DISSOLVING: 3 };
+        let gameState = STATE.IDLE;
         
+        // 卡牌数据
+        let cards = [];
+        const CARD_COUNT = tarotImages.length;
+        const ANGLE_STEP = 360 / CARD_COUNT;
+        const RADIUS = 550;
+
         async function init() {
-            // 1. 初始化 DOM 池
-            for(let i=0; i<VISIBLE_COUNT; i++) {
+            // 1. 初始化圆环
+            tarotImages.forEach((url, i) => {
                 const el = document.createElement("div");
                 el.className = "card-wrapper";
-                el.innerHTML = `<div class="card-face card-back"></div>`; // 滚动时只需要背面
-                carousel.appendChild(el);
-                domPool.push(el);
-            }
+                el.dataset.index = i;
+                // 注意：这里我们不放正面图，只有被抽出来时才加载正面图，优化性能
+                el.innerHTML = `<div class="card-face card-back"></div>`; 
+                orbitSystem.appendChild(el);
+                cards.push({ el, angle: i * ANGLE_STEP, url });
+            });
 
             // 2. 视觉模型
             const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm");
@@ -230,13 +238,13 @@
             video.srcObject = stream;
             video.addEventListener("loadeddata", () => {
                 resizeCanvas();
-                requestAnimationFrame(renderLoop);
-                predictLoop();
+                animate();
+                predict();
             });
         }
 
         let lastVideoTime = -1;
-        async function predictLoop() {
+        async function predict() {
             let now = performance.now();
             if (video.currentTime !== lastVideoTime) {
                 lastVideoTime = video.currentTime;
@@ -248,257 +256,284 @@
                     const lm = results.landmarks[0];
                     drawSkeleton(lm);
 
-                    // 数据更新
                     const indexTip = lm[8];
                     const thumbTip = lm[4];
                     
-                    // 镜像翻转
-                    handX = (1 - indexTip.x);
+                    // 坐标映射
+                    handX = 1 - indexTip.x;
                     handY = indexTip.y;
                     
                     const dist = Math.hypot(indexTip.x - thumbTip.x, indexTip.y - thumbTip.y);
-                    isPinching = dist < 0.06;
+                    isPinching = dist < 0.05;
 
-                    handleInteraction();
+                    handleGestureLogic();
                 } else {
-                    // 没手的时候不需要特别处理，保持状态
+                    // 没手的时候，缓慢停下
+                    rotationSpeed *= DAMPING;
                     isPinching = false;
                 }
             }
-            requestAnimationFrame(predictLoop);
+            requestAnimationFrame(predict);
         }
 
-        /* --- 核心交互逻辑 --- */
-        function handleInteraction() {
-            if (currentState === STATE.SCROLLING) {
-                // 1. 映射滑动：手在X轴的位置决定滚动速度或位置
-                // 这里使用位置映射：屏幕左边对应滚动的左边，右边对应右边
-                // 为了无限滚动，我们累加 scrollPos
-                
-                // 简单的阻尼跟随：手越靠边，滚得越快？或者直接映射位置？
-                // 需求是“手势配合滑动”，直接映射位置比较跟手
-                // 我们让 scrollPos 跟随 handX * TOTAL_CARDS，但要处理循环
-                
-                // 这里的逻辑：手在屏幕的相对位置 (0-1) 控制当前视窗内的 offset
-                // 让 scrollPos 持续增加来实现“无限”有点复杂，我们用“相对位移”
-                // 让 targetScroll = handX * (visible range) 
-                
-                // 为了简单且效果好：手在 X 轴的位置直接控制 "当前这一排的相位"
-                // 比如 scrollPos = handX * 5
-                targetScroll = handX * (TOTAL_CARDS - 1); 
-                
-                statusText.innerText = "SELECT CARD // PINCH TO EXTRACT";
+        /* --- 核心逻辑引擎 --- */
+        let targetCardIndex = -1; // 当前正对的那张牌
 
-                // 检测抓取
-                // 必须在“Ready”状态（即卡牌浮起）时捏合
-                if (isPinching && closestCardIndex !== -1) {
-                    grabCard(closestCardIndex);
+        function handleGestureLogic() {
+            if (gameState === STATE.GRABBED) {
+                // 状态：已抓取
+                handleGrabbedState();
+                return;
+            }
+
+            // 1. 计算旋转控制
+            // 手在左边 -> 向右旋转 (让左边的牌过来) -> speed > 0
+            // 手在右边 -> 向左旋转 -> speed < 0
+            let targetSpeed = 0;
+            
+            if (handX < DEAD_ZONE_START) {
+                // 左侧加速
+                targetSpeed = (DEAD_ZONE_START - handX) / DEAD_ZONE_START * MAX_SPEED;
+                document.getElementById('left-zone').style.opacity = 0.5;
+                document.getElementById('right-zone').style.opacity = 0;
+            } else if (handX > DEAD_ZONE_END) {
+                // 右侧加速 (反向)
+                targetSpeed = -(handX - DEAD_ZONE_END) / (1 - DEAD_ZONE_END) * MAX_SPEED;
+                document.getElementById('left-zone').style.opacity = 0;
+                document.getElementById('right-zone').style.opacity = 0.5;
+            } else {
+                // 中间：刹车
+                targetSpeed = 0;
+                document.getElementById('left-zone').style.opacity = 0;
+                document.getElementById('right-zone').style.opacity = 0;
+            }
+
+            // 平滑变速
+            rotationSpeed += (targetSpeed - rotationSpeed) * 0.1;
+            
+            // 2. 指读判定 (Hover)
+            // 只有当旋转几乎停止，且手在中间区域
+            if (Math.abs(rotationSpeed) < 0.1 && handX > DEAD_ZONE_START && handX < DEAD_ZONE_END) {
+                rotationSpeed = 0; // 强制停止以稳定选择
+                
+                // 找出哪张牌现在在正前方 (角度最接近 0 或 360)
+                // 当前全局旋转角度 currentRotation
+                // 卡牌物理角度 = card.angle + currentRotation
+                // 我们需要 (card.angle + currentRotation) % 360 ≈ 0
+                
+                // 反推：正前方的理论角度应为 -currentRotation
+                let normalizedRot = -currentRotation % 360;
+                if (normalizedRot < 0) normalizedRot += 360;
+                
+                // 找到最接近 normalizedRot 的 card.angle
+                let closestDist = Infinity;
+                let closestIdx = -1;
+
+                cards.forEach((card, i) => {
+                    let diff = Math.abs(card.angle - normalizedRot);
+                    if (diff > 180) diff = 360 - diff; // 处理环绕
+                    if (diff < closestDist) {
+                        closestDist = diff;
+                        closestIdx = i;
+                    }
+                });
+
+                // 还需要判定：食指Y轴是否指着卡牌 (卡牌大致在屏幕中间)
+                // 简单判定：handY 在 0.3 ~ 0.7 之间
+                if (closestDist < 15 && handY > 0.3 && handY < 0.7) {
+                    highlightCard(closestIdx);
+                    
+                    // 3. 捏合抽取判定
+                    if (isPinching && !pinchLocked) {
+                        extractCard(closestIdx);
+                    }
+                } else {
+                    clearHighlight();
                 }
+            } else {
+                clearHighlight();
+            }
+            
+            if (!isPinching) pinchLocked = false;
+        }
 
-            } else if (currentState === STATE.GRABBED) {
-                statusText.innerText = "VIEWING // OPEN HAND TO RELEASE";
-                
-                // 仅仅更新 ActiveCard 的位置跟随手势
-                // 使用 transform 直接操作 DOM
-                const screenX = handX * window.innerWidth;
-                const screenY = handY * window.innerHeight;
-                
-                // 加上一点偏移，让卡牌在手指下方一点，不要遮挡指尖
-                activeCard.style.transform = `translate(${screenX - 90}px, ${screenY - 160}px) scale(1.2)`;
-
-                // 检测释放
-                if (!isPinching) {
-                    releaseCard();
-                }
+        function highlightCard(index) {
+            if (targetCardIndex !== index) {
+                clearHighlight();
+                targetCardIndex = index;
+                cards[index].el.classList.add('hovered');
+                statusText.innerText = "LOCKED // PINCH TO EXTRACT";
             }
         }
 
-        /* --- 状态切换动作 --- */
-        function grabCard(index) {
-            currentState = STATE.GRABBED;
-            document.body.classList.add('viewing');
-            grabbedCardIndex = index % TOTAL_CARDS; // 确保索引安全
+        function clearHighlight() {
+            if (targetCardIndex !== -1) {
+                cards[targetCardIndex].el.classList.remove('hovered');
+                targetCardIndex = -1;
+                statusText.innerText = "CONTROL ROTATION // POINT TO SELECT";
+            }
+        }
 
-            // 1. 设置 Active Card 内容
-            const imgUrl = rawData[grabbedCardIndex];
-            activeImg.src = imgUrl;
+        /* --- 动作系统 --- */
+        function extractCard(index) {
+            gameState = STATE.GRABBED;
+            pinchLocked = true;
+            statusText.innerText = "VIEWING // RELEASE TO DISSOLVE";
+
+            const data = cards[index];
+            
+            // 1. 设置活动卡牌
+            activeImg.src = data.url;
             activeCard.style.display = 'block';
             
-            // 2. 初始位置：从屏幕中心出现，或者从卡牌原位置出现？
-            // 为了流畅，我们让它瞬移到手指位置，加上 CSS transition 翻转
-            setTimeout(() => {
-                activeCard.classList.add('revealed'); // 触发垂直翻转
-            }, 50);
+            // 初始位置：屏幕中心 (因为是从正前方抽出来的)
+            // 我们通过 transform 设置到手指位置，但先从中心开始动画
+            
+            // 2. 隐藏原卡牌 (视觉欺骗)
+            data.el.style.opacity = 0;
 
-            // 3. 隐藏长廊里的对应卡牌（可选，或者让长廊变暗）
-            // 这里我们用 CSS body.viewing 让长廊虚化了
+            // 3. 触发翻转动画
+            setTimeout(() => {
+                activeCard.classList.add('flipped');
+            }, 50);
         }
 
-        function releaseCard() {
-            currentState = STATE.DISSOLVING;
-            document.body.classList.remove('viewing');
+        function handleGrabbedState() {
+            // 跟随手指
+            const x = handX * window.innerWidth;
+            const y = handY * window.innerHeight;
+            
+            // 让卡牌在手指下方一点，稍微放大
+            activeCard.style.transform = `translate(${x - 80}px, ${y - 100}px) scale(1.2)`;
 
-            // 1. 触发粒子消散
+            // 检测释放
+            if (!isPinching) {
+                dissolveCard();
+            }
+        }
+
+        function dissolveCard() {
+            gameState = STATE.DISSOLVING;
+            
+            // 1. 粒子爆炸
             const rect = activeCard.getBoundingClientRect();
             explode(rect.left + rect.width/2, rect.top + rect.height/2);
-
-            // 2. 隐藏 Active Card
+            
+            // 2. 隐藏活动卡牌
             activeCard.style.display = 'none';
-            activeCard.classList.remove('revealed');
-            activeCard.style.transform = ''; // 重置变换
-
-            // 3. 恢复状态
-            setTimeout(() => {
-                currentState = STATE.SCROLLING;
-            }, 200); // 稍微防抖
-        }
-
-        /* --- 渲染循环 (动画与物理) --- */
-        let closestCardIndex = -1; // 当前哪个 DOM 元素是最近的（用于上浮）
-
-        function renderLoop() {
-            effectCtx.clearRect(0, 0, window.innerWidth, window.innerHeight);
-            updateParticles();
-
-            if (currentState === STATE.SCROLLING || currentState === STATE.DISSOLVING) {
-                // 平滑滚动
-                scrollPos += (targetScroll - scrollPos) * 0.1;
-                
-                // 渲染无限长廊
-                // 核心算法：无论 scrollPos 是多少，都算出相对于中心的偏移
-                const centerX = window.innerWidth / 2;
-                
-                // 找到“最中间”的那个数据索引
-                const centerDataIdx = Math.round(scrollPos);
-                
-                let minDist = Infinity;
-                closestCardIndex = -1;
-
-                domPool.forEach((el, i) => {
-                    // 我们要渲染 centerDataIdx 附近的几张牌
-                    // DOM池只有 7 个，我们需要循环利用它们
-                    // offsetFromCenter 是 -3, -2, -1, 0, 1, 2, 3
-                    const offsetIndex = i - Math.floor(VISIBLE_COUNT / 2); 
-                    
-                    // 当前这个 DOM 应该代表哪张数据牌？
-                    let dataIndex = centerDataIdx + offsetIndex;
-                    
-                    // 视觉上的 X 偏移 (相对于 scrollPos 的小数部分)
-                    // scrollPos 比如是 2.5， centerDataIdx 是 3
-                    // diff = 3 - 2.5 = 0.5
-                    const visualOffset = (dataIndex - scrollPos);
-                    
-                    // 物理位置
-                    const translateX = visualOffset * CARD_SPACING;
-                    const translateZ = -Math.abs(visualOffset) * 100;
-                    const rotateY = visualOffset * -15; // 稍微旋转
-                    
-                    // 处理上浮逻辑 (Hover Up)
-                    let translateY = 0;
-                    let isReady = false;
-                    
-                    // 如果这卡在中间范围内
-                    if (Math.abs(visualOffset) < 0.3) {
-                        translateY = -60; // 向上浮动
-                        isReady = true;
-                        closestCardIndex = dataIndex; // 记录下来，用于抓取
-                    } else if (Math.abs(visualOffset) < 0.8) {
-                        // 平滑过渡
-                         translateY = -60 * (1 - (Math.abs(visualOffset)-0.3)/0.5);
-                    }
-
-                    el.style.transform = `
-                        translateX(${translateX}px) 
-                        translateY(${translateY}px)
-                        translateZ(${translateZ}px) 
-                        rotateY(${rotateY}deg)
-                    `;
-                    el.style.zIndex = 100 - Math.round(Math.abs(visualOffset) * 10);
-                    
-                    // 样式反馈
-                    if(isReady) el.classList.add('ready');
-                    else el.classList.remove('ready');
-
-                    // 确保卡牌背面可见（因为没有翻转）
-                    // 实际上这里不需要换图，因为都是背面，只有抽出来才翻转
-                });
+            activeCard.classList.remove('flipped');
+            
+            // 3. 恢复原卡牌
+            if (targetCardIndex !== -1) {
+                const el = cards[targetCardIndex].el;
+                // 延迟一点显示，配合粒子消散
+                setTimeout(() => {
+                    el.style.opacity = 1;
+                    el.classList.remove('hovered'); // 重置浮动
+                }, 300);
             }
 
-            requestAnimationFrame(renderLoop);
+            // 4. 重置状态
+            setTimeout(() => {
+                gameState = STATE.IDLE;
+                targetCardIndex = -1;
+            }, 500);
         }
 
-        /* --- 粒子系统 (消散特效) --- */
+
+        /* --- 渲染循环 (物理运动) --- */
+        function animate() {
+            // 更新旋转角度
+            currentRotation += rotationSpeed;
+
+            // 渲染所有卡牌位置
+            cards.forEach(card => {
+                // 核心算法：Card Angle + Global Rotation
+                const theta = card.angle + currentRotation;
+                
+                // CSS rotateY 是让物体绕Y轴旋转。
+                // translateZ 是推向外圈。
+                card.el.style.transform = `rotateY(${theta}deg) translateZ(${RADIUS}px)`;
+            });
+            
+            // 渲染粒子
+            updateParticles();
+
+            requestAnimationFrame(animate);
+        }
+
+
+        /* --- 辅助系统 --- */
         let particles = [];
         function explode(x, y) {
-            for(let i=0; i<100; i++) {
+            for(let i=0; i<80; i++) {
                 const angle = Math.random()*Math.PI*2;
-                const speed = Math.random()*15 + 5;
+                const speed = Math.random()*10 + 5;
                 particles.push({
                     x, y,
                     vx: Math.cos(angle)*speed,
                     vy: Math.sin(angle)*speed,
                     life: 1.0,
-                    size: Math.random()*4+2,
-                    color: `hsl(${140 + Math.random()*40}, 100%, 70%)` // 绿色系
+                    color: '#00ff9d'
                 });
             }
         }
         function updateParticles() {
+            effectCtx.clearRect(0, 0, window.innerWidth, window.innerHeight);
             for(let i=particles.length-1; i>=0; i--) {
-                let p = particles[i];
-                p.x += p.vx; p.y += p.vy;
-                p.vx *= 0.9; p.vy *= 0.9; // 阻力
-                p.life -= 0.02;
+                let p=particles[i]; p.x+=p.vx; p.y+=p.vy; p.life-=0.03;
                 if(p.life<=0) particles.splice(i,1);
                 else {
-                    effectCtx.globalAlpha = p.life;
-                    effectCtx.fillStyle = p.color;
-                    effectCtx.beginPath();
-                    effectCtx.arc(p.x, p.y, p.size, 0, Math.PI*2);
-                    effectCtx.fill();
+                    effectCtx.globalAlpha=p.life; effectCtx.fillStyle=p.color; 
+                    effectCtx.beginPath(); effectCtx.arc(p.x,p.y,2,0,Math.PI*2); effectCtx.fill();
                 }
             }
             effectCtx.globalAlpha = 1;
         }
 
-        /* --- 骨骼绘制 (辅助) --- */
         const connections = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[0,9],[9,10],[10,11],[11,12],[0,13],[13,14],[14,15],[15,16],[0,17],[17,18],[18,19],[19,20],[5,9],[9,13],[13,17]];
-        function drawSkeleton(landmarks) {
+        function drawSkeleton(lm) {
             handCtx.lineWidth = 2; handCtx.lineCap = "round";
-            handCtx.strokeStyle = "rgba(0, 255, 157, 0.3)";
+            handCtx.strokeStyle = "rgba(0, 255, 157, 0.4)";
             
+            // 骨架
             connections.forEach(([i, j]) => {
-                const p1 = landmarks[i], p2 = landmarks[j];
+                const p1 = lm[i], p2 = lm[j];
                 handCtx.beginPath();
                 handCtx.moveTo((1-p1.x)*window.innerWidth, p1.y*window.innerHeight);
                 handCtx.lineTo((1-p2.x)*window.innerWidth, p2.y*window.innerHeight);
                 handCtx.stroke();
             });
 
-            // 绘制指尖
-            const indexTip = landmarks[8];
-            const x = (1-indexTip.x)*window.innerWidth;
-            const y = indexTip.y*window.innerHeight;
+            // 关键点高亮
+            const indexTip = lm[8]; // 食指
+            const cx = (1-indexTip.x)*window.innerWidth;
+            const cy = indexTip.y*window.innerHeight;
             
-            // 捏合状态指示器
+            // 准星特效
             handCtx.beginPath();
-            handCtx.arc(x, y, isPinching ? 8 : 4, 0, Math.PI*2);
+            handCtx.arc(cx, cy, 5, 0, Math.PI*2);
             handCtx.fillStyle = isPinching ? "#fff" : "#00ff9d";
             handCtx.fill();
             
-            if(isPinching) {
+            // 如果处于静止悬停状态，画出激光指引线
+            if (gameState === STATE.IDLE && Math.abs(rotationSpeed) < 0.1 && targetCardIndex !== -1) {
                 handCtx.beginPath();
-                handCtx.strokeStyle = "#fff";
-                handCtx.arc(x, y, 20, 0, Math.PI*2);
+                handCtx.moveTo(cx, cy);
+                // 连线到屏幕中心（卡牌位置）
+                handCtx.lineTo(window.innerWidth/2, window.innerHeight/2);
+                handCtx.strokeStyle = "rgba(0, 255, 157, 0.2)";
+                handCtx.setLineDash([5, 5]);
                 handCtx.stroke();
+                handCtx.setLineDash([]);
             }
         }
 
         function resizeCanvas() {
-            const w = window.innerWidth, h = window.innerHeight;
-            document.getElementById("bg-canvas").width = w; document.getElementById("bg-canvas").height = h;
-            document.getElementById("hand-canvas").width = w; document.getElementById("hand-canvas").height = h;
-            document.getElementById("effect-canvas").width = w; document.getElementById("effect-canvas").height = h;
+            const w=window.innerWidth, h=window.innerHeight;
+            document.getElementById("bg-canvas").width=w; document.getElementById("bg-canvas").height=h;
+            document.getElementById("effect-canvas").width=w; document.getElementById("effect-canvas").height=h;
+            document.getElementById("hand-canvas").width=w; document.getElementById("hand-canvas").height=h;
         }
         window.onresize = resizeCanvas;
 
