@@ -3,84 +3,67 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>命运塔罗 - 手势互动版</title>
-    <!-- 引入 MediaPipe -->
+    <title>Cyber Tarot - Ultimate</title>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.js" crossorigin="anonymous"></script>
     <style>
-        /* --- 1. 基础样式 --- */
+        /* --- 1. 极致黑夜美学 --- */
         :root {
-            --bg-color: #080808;
-            --accent-gold: #d4af37;
-            --accent-green: #00ff88; /* 绿色光圈颜色 */
-            --card-width: 140px;
-            --card-height: 240px;
+            --bg-color: #000000;
+            --card-glow: rgba(255, 255, 255, 0.15);
+            --accent-green: #00ff9d; /* 视频同款荧光绿 */
+            --card-width: 160px;
+            --card-height: 280px;
         }
 
         body {
             margin: 0;
-            background-color: var(--bg-color);
-            background-image: 
-                radial-gradient(circle at 50% 50%, rgba(20, 20, 20, 1) 0%, rgba(0, 0, 0, 1) 100%);
+            background: var(--bg-color);
             color: #fff;
-            font-family: 'Times New Roman', serif;
+            font-family: 'Courier New', monospace; /* 科技感字体 */
             overflow: hidden;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
             height: 100vh;
-            user-select: none;
-        }
-
-        /* --- 2. 界面层级 --- */
-        #loading-screen, #game-screen {
-            position: absolute;
-            width: 100%;
-            height: 100%;
             display: flex;
-            flex-direction: column;
             justify-content: center;
             align-items: center;
-            transition: opacity 1s;
+            cursor: none; /* 隐藏鼠标 */
         }
 
-        .hidden { opacity: 0; pointer-events: none; z-index: -1; }
-
-        h1 { font-size: 2.5rem; color: var(--accent-gold); margin-bottom: 10px; }
-        p { color: #aaa; margin-bottom: 30px; }
-
-        /* --- 3. 绿色选择光圈 (核心交互) --- */
-        #selection-ring {
+        /* --- 2. 沉浸式背景星空 --- */
+        #stars-canvas {
             position: fixed;
-            width: 60px;
-            height: 60px;
-            border: 4px solid var(--accent-green);
-            border-radius: 50%;
-            box-shadow: 0 0 20px var(--accent-green), inset 0 0 10px var(--accent-green);
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            z-index: 0;
             pointer-events: none;
-            transform: translate(-50%, -50%);
-            z-index: 100;
-            transition: left 0.1s ease-out, top 0.1s ease-out, width 0.2s, height 0.2s;
-            display: none;
         }
 
-        /* 握拳时的状态提示 */
-        #fist-hint {
+        /* --- 3. 荧光绿光圈 (仿视频核心) --- */
+        #cursor-ring {
             position: fixed;
-            bottom: 30px;
-            font-size: 1.2rem;
-            color: var(--accent-green);
-            opacity: 0;
-            transition: opacity 0.3s;
-            text-shadow: 0 0 10px var(--accent-green);
-            z-index: 200;
+            width: 50px;
+            height: 50px;
+            border: 3px solid var(--accent-green);
+            border-radius: 50%;
+            box-shadow: 0 0 15px var(--accent-green), inset 0 0 5px var(--accent-green);
+            pointer-events: none;
+            z-index: 999;
+            transform: translate(-50%, -50%);
+            transition: width 0.1s, height 0.1s, background 0.1s;
+        }
+        
+        /* 捏合时的状态 */
+        #cursor-ring.pinching {
+            width: 20px;
+            height: 20px;
+            background: var(--accent-green);
+            box-shadow: 0 0 30px var(--accent-green);
         }
 
-        /* --- 4. 卡牌容器 --- */
+        /* --- 4. 极简卡牌容器 --- */
         #card-container {
             display: flex;
-            gap: 20px;
-            perspective: 1000px;
+            gap: 30px;
+            perspective: 1200px;
             z-index: 10;
         }
 
@@ -89,330 +72,295 @@
             height: var(--card-height);
             position: relative;
             transform-style: preserve-3d;
-            transition: transform 0.6s cubic-bezier(0.4, 0.0, 0.2, 1);
+            transition: transform 0.6s cubic-bezier(0.23, 1, 0.32, 1);
         }
 
         .card-wrapper.flipped { transform: rotateY(180deg); }
-        .card-wrapper.resetting { animation: shake 0.5s; }
 
         .card-face {
             position: absolute;
-            width: 100%;
-            height: 100%;
+            width: 100%; height: 100%;
             backface-visibility: hidden;
-            border-radius: 12px;
-            box-shadow: 0 5px 20px rgba(0,0,0,0.8);
-            border: 2px solid #333;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            overflow: hidden;
+            border-radius: 4px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.8);
         }
 
-        /* 卡背：神秘花纹 */
+        /* 卡背：纯黑 + 微光边框 (视频风格) */
         .card-back {
-            background: #1a1a1a;
-            background-image: repeating-linear-gradient(45deg, #222 25%, transparent 25%, transparent 75%, #222 75%, #222), repeating-linear-gradient(45deg, #222 25%, #1a1a1a 25%, #1a1a1a 75%, #222 75%, #222);
-            background-position: 0 0, 10px 10px;
-            background-size: 20px 20px;
-            border-color: #444;
-        }
-        .card-back::after {
-            content: '☪';
-            font-size: 4rem;
-            color: #555;
+            background: #050505;
+            border: 1px solid rgba(255,255,255,0.2);
+            box-shadow: 0 0 15px var(--card-glow);
+            transition: box-shadow 0.3s, border-color 0.3s;
         }
 
-        /* 被绿色光圈选中时的效果 */
-        .card-wrapper.selected .card-back {
+        /* 选中态 */
+        .card-wrapper.hovered .card-back {
             border-color: var(--accent-green);
-            box-shadow: 0 0 25px var(--accent-green);
+            box-shadow: 0 0 30px var(--accent-green);
         }
 
         /* 卡面 */
         .card-front {
-            background: #eee;
-            color: #000;
+            background: #111;
             transform: rotateY(180deg);
+            border: 1px solid #333;
         }
-        .card-front img { width: 100%; height: 75%; object-fit: cover; }
-        .card-front div { height: 25%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 1.1rem; }
-
-        /* --- 5. 辅助元素 --- */
-        canvas { position: fixed; top: 0; left: 0; pointer-events: none; z-index: 50; }
-        #webcam { position: fixed; top: 10px; right: 10px; width: 120px; opacity: 0.2; transform: scaleX(-1); border-radius: 8px; }
-
-        /* 手机适配 */
-        @media (max-width: 768px) {
-            :root { --card-width: 80px; --card-height: 140px; }
-            #card-container { gap: 10px; flex-wrap: wrap; justify-content: center; }
+        .card-front img {
+            width: 100%; height: 100%;
+            object-fit: cover;
+            border-radius: 4px;
+            filter: contrast(1.1) brightness(1.1); /* 增强质感 */
         }
+
+        /* --- 5. UI文字 --- */
+        #status-text {
+            position: fixed;
+            top: 20%;
+            text-align: center;
+            width: 100%;
+            font-size: 14px;
+            letter-spacing: 4px;
+            color: rgba(255,255,255,0.5);
+            text-transform: uppercase;
+            z-index: 20;
+        }
+
+        #webcam { position: fixed; opacity: 0; pointer-events: none; } /* 完全隐藏摄像头画面 */
     </style>
 </head>
 <body>
 
-    <!-- 视觉元素 -->
-    <div id="selection-ring"></div>
-    <div id="fist-hint">👊 检测到握拳：正在重置牌阵...</div>
-    <canvas id="particle-canvas"></canvas>
+    <div id="status-text">System Initializing...</div>
+    <div id="cursor-ring"></div>
+    <canvas id="stars-canvas"></canvas>
+    
+    <div id="card-container"></div>
     <video id="webcam" autoplay playsinline></video>
-
-    <!-- 加载与引导 -->
-    <div id="loading-screen">
-        <h1>🔮 正在召唤塔罗牌阵...</h1>
-        <p>请允许摄像头权限以进行手势互动</p>
-        <button id="start-btn" style="padding: 10px 30px; background: var(--accent-gold); border: none; font-size: 1.2rem; cursor: pointer; display: none;">开始仪式</button>
-    </div>
-
-    <!-- 游戏主区域 -->
-    <div id="game-screen" class="hidden">
-        <h2 style="position: absolute; top: 10%; color: var(--accent-green); text-shadow: 0 0 10px var(--accent-green);">请用手势选择您的命运</h2>
-        <div id="card-container"></div>
-    </div>
 
     <script type="module">
         import { FilesetResolver, HandLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.js";
 
-        /* --- 1. 塔罗牌数据 (经典牌面) --- */
-        const cardsData = [
-            { name: "力量 Strength", img: "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f5/RWS_Tarot_08_Strength.jpg/344px-RWS_Tarot_08_Strength.jpg" },
-            { name: "宝剑三 3 of Swords", img: "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d4/Swords03.jpg/347px-Swords03.jpg" },
-            { name: "权杖五 5 of Wands", img: "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6b/Wands05.jpg/352px-Wands05.jpg" },
-            { name: "战车 The Chariot", img: "https://upload.wikimedia.org/wikipedia/commons/thumb/9/9b/RWS_Tarot_07_Chariot.jpg/353px-RWS_Tarot_07_Chariot.jpg" },
-            { name: "命运之轮 Wheel of Fortune", img: "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3c/RWS_Tarot_10_Wheel_of_Fortune.jpg/352px-RWS_Tarot_10_Wheel_of_Fortune.jpg" }
+        /* --- 数据配置 --- */
+        const cards = [
+            { img: "https://upload.wikimedia.org/wikipedia/commons/9/90/RWS_Tarot_00_Fool.jpg" },
+            { img: "https://upload.wikimedia.org/wikipedia/commons/d/de/RWS_Tarot_01_Magician.jpg" },
+            { img: "https://upload.wikimedia.org/wikipedia/commons/8/88/RWS_Tarot_02_High_Priestess.jpg" },
+            { img: "https://upload.wikimedia.org/wikipedia/commons/d/d2/RWS_Tarot_03_Empress.jpg" },
+            { img: "https://upload.wikimedia.org/wikipedia/commons/c/c3/RWS_Tarot_04_Emperor.jpg" }
         ];
 
-        /* --- 2. 变量与状态 --- */
+        /* --- 核心变量 --- */
         let handLandmarker;
-        let webcamRunning = false;
-        let lastVideoTime = -1;
-        let lastSelectedIdx = -1;
-        let hoverStartTime = 0;
-        const HOVER_TRIGGER_TIME = 500; // 0.5秒触发翻牌
-        
-        // DOM
         const video = document.getElementById("webcam");
-        const ring = document.getElementById("selection-ring");
-        const container = document.getElementById("card-container");
-        const particleCanvas = document.getElementById("particle-canvas");
-        const ctx = particleCanvas.getContext('2d');
-        const fistHint = document.getElementById("fist-hint");
+        const cursor = document.getElementById("cursor-ring");
+        const statusText = document.getElementById("status-text");
+        
+        // 平滑移动变量 (Lerp)
+        let targetX = window.innerWidth / 2;
+        let targetY = window.innerHeight / 2;
+        let currentX = window.innerWidth / 2;
+        let currentY = window.innerHeight / 2;
+        
+        // 粒子系统
+        const canvas = document.getElementById("stars-canvas");
+        const ctx = canvas.getContext("2d");
+        let particles = [];
 
-        /* --- 3. 初始化 MediaPipe --- */
-        async function setupVision() {
+        /* --- 1. 初始化系统 --- */
+        async function init() {
+            // 生成卡牌
+            const container = document.getElementById("card-container");
+            cards.forEach((c, i) => {
+                const el = document.createElement("div");
+                el.className = "card-wrapper";
+                el.innerHTML = `
+                    <div class="card-face card-back"></div>
+                    <div class="card-face card-front"><img src="${c.img}"></div>
+                `;
+                container.appendChild(el);
+            });
+
+            // 启动视觉模型
             const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm");
             handLandmarker = await HandLandmarker.createFromOptions(vision, {
                 baseOptions: {
                     modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
-                    delegate: "GPU"
+                    delegate: "GPU" // 强制开启GPU加速
                 },
                 runningMode: "VIDEO",
                 numHands: 1
             });
-            document.getElementById('start-btn').style.display = 'block';
-            document.querySelector('#loading-screen h1').innerText = "🔮 准备就绪";
-        }
-        setupVision();
 
-        /* --- 4. 游戏流程控制 --- */
-        function initGame() {
-            container.innerHTML = '';
-            cardsData.forEach((data, i) => {
-                const card = document.createElement('div');
-                card.className = 'card-wrapper';
-                card.id = `card-${i}`;
-                card.innerHTML = `
-                    <div class="card-face card-back"></div>
-                    <div class="card-face card-front">
-                        <img src="${data.img}" alt="${data.name}">
-                        <div>${data.name}</div>
-                    </div>
-                `;
-                container.appendChild(card);
-            });
-        }
-
-        document.getElementById('start-btn').onclick = async () => {
+            // 启动摄像头
             try {
-                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 } });
                 video.srcObject = stream;
-                video.addEventListener("loadeddata", predictWebcam);
-                webcamRunning = true;
-                
-                initGame();
-                resizeCanvas();
-                
-                document.getElementById('loading-screen').classList.add('hidden');
-                document.getElementById('game-screen').classList.remove('hidden');
-                ring.style.display = 'block';
-            } catch(e) { alert("请允许摄像头权限"); }
-        };
+                video.addEventListener("loadeddata", () => {
+                    statusText.innerText = "SYSTEM READY // DETECTING HAND";
+                    resizeCanvas();
+                    animate();
+                    predict();
+                });
+            } catch(e) {
+                statusText.innerText = "ERROR: CAMERA ACCESS DENIED";
+            }
+        }
 
-        /* --- 5. 核心逻辑：手势识别 Loop --- */
-        async function predictWebcam() {
-            if (!handLandmarker) return;
-            
-            // 保持Canvas尺寸
-            if (video.videoWidth && particleCanvas.width !== window.innerWidth) resizeCanvas();
-
-            if (lastVideoTime !== video.currentTime) {
+        /* --- 2. 核心：手势追踪与平滑 --- */
+        async function predict() {
+            let now = performance.now();
+            if (video.currentTime !== lastVideoTime) {
                 lastVideoTime = video.currentTime;
-                const results = handLandmarker.detectForVideo(video, performance.now());
+                const results = handLandmarker.detectForVideo(video, now);
 
                 if (results.landmarks && results.landmarks.length > 0) {
-                    const landmarks = results.landmarks[0];
-                    const indexTip = landmarks[8]; // 食指尖
-                    
-                    // 1. 映射坐标 (镜像翻转)
-                    const x = (1 - indexTip.x) * window.innerWidth;
-                    const y = indexTip.y * window.innerHeight;
+                    const lm = results.landmarks[0];
+                    const indexTip = lm[8]; // 食指
+                    const thumbTip = lm[4]; // 拇指
 
-                    // 2. 移动绿色光圈
-                    ring.style.left = `${x}px`;
-                    ring.style.top = `${y}px`;
+                    // 计算目标坐标 (添加镜像翻转)
+                    targetX = (1 - indexTip.x) * window.innerWidth;
+                    targetY = indexTip.y * window.innerHeight;
 
-                    // 3. 检测握拳 (重置游戏)
-                    if (detectFist(landmarks)) {
-                        handleFistReset();
-                    } else {
-                        // 4. 处理选卡逻辑
-                        handleSelection(x, y);
-                        fistHint.style.opacity = 0;
-                    }
-                } else {
-                    ring.style.display = 'none'; // 没手时隐藏光圈
+                    // 计算捏合距离
+                    const dist = Math.hypot(indexTip.x - thumbTip.x, indexTip.y - thumbTip.y);
+                    const isPinching = dist < 0.06; // 捏合阈值
+
+                    handleInteraction(currentX, currentY, isPinching);
                 }
             }
-            
+            requestAnimationFrame(predict);
+        }
+        let lastVideoTime = -1;
+
+        /* --- 3. 交互与动画循环 --- */
+        function animate() {
+            // A. 光标平滑插值 (关键：让光标看起来像视频里那样稳定)
+            // 0.15 是平滑系数，越小越慢越平滑
+            currentX += (targetX - currentX) * 0.15;
+            currentY += (targetY - currentY) * 0.15;
+
+            cursor.style.left = `${currentX}px`;
+            cursor.style.top = `${currentY}px`;
+
+            // B. 粒子更新
             updateParticles();
-            window.requestAnimationFrame(predictWebcam);
+
+            requestAnimationFrame(animate);
         }
 
-        /* --- 6. 交互逻辑细节 --- */
-        
-        // 握拳检测算法：指尖(8,12,16,20)到手腕(0)的距离缩短
-        function detectFist(landmarks) {
-            const wrist = landmarks[0];
-            const tips = [8, 12, 16, 20]; 
-            let foldedFingers = 0;
-            
-            tips.forEach(tipIdx => {
-                const tip = landmarks[tipIdx];
-                const mcp = landmarks[tipIdx - 3]; // 指根
-                // 简单的判断：指尖如果不比指根高(y值小)，或者距离手腕很近
-                const distToWrist = Math.sqrt(Math.pow(tip.x - wrist.x, 2) + Math.pow(tip.y - wrist.y, 2));
-                if (distToWrist < 0.15) foldedFingers++; // 阈值需根据实际情况微调
-            });
-            return foldedFingers >= 3; // 3根以上手指蜷缩算握拳
-        }
+        /* --- 4. 逻辑判断 --- */
+        let pinchTriggered = false;
 
-        let isResetting = false;
-        function handleFistReset() {
-            if (isResetting) return;
-            fistHint.style.opacity = 1;
-            
-            // 简单的防抖，握拳保持一下才触发
-            if (!window.fistTimer) {
-                window.fistTimer = setTimeout(() => {
-                    isResetting = true;
-                    // 重置动画
-                    const cards = document.querySelectorAll('.card-wrapper');
-                    cards.forEach(c => {
-                        c.classList.remove('flipped');
-                        c.classList.add('resetting');
-                    });
-                    setTimeout(() => {
-                        cards.forEach(c => c.classList.remove('resetting'));
-                        isResetting = false;
-                        window.fistTimer = null;
-                    }, 1000);
-                }, 800); // 握拳0.8秒触发
-            }
-        }
+        function handleInteraction(x, y, isPinching) {
+            const wrappers = document.querySelectorAll('.card-wrapper');
+            let hovering = false;
 
-        function handleSelection(x, y) {
-            if (window.fistTimer) { clearTimeout(window.fistTimer); window.fistTimer = null; }
-            if (isResetting) return;
+            // 捏合视觉反馈
+            if (isPinching) cursor.classList.add("pinching");
+            else cursor.classList.remove("pinching");
 
-            const cards = document.querySelectorAll('.card-wrapper');
-            let currentHoverIdx = -1;
-
-            cards.forEach((card, idx) => {
+            wrappers.forEach(card => {
                 const rect = card.getBoundingClientRect();
-                // 碰撞检测
+                // 简单的AABB碰撞检测
                 if (x > rect.left && x < rect.right && y > rect.top && y < rect.bottom) {
-                    currentHoverIdx = idx;
-                    card.classList.add('selected');
-                } else {
-                    card.classList.remove('selected');
-                }
-            });
-
-            // 翻牌触发逻辑
-            if (currentHoverIdx !== -1) {
-                if (currentHoverIdx !== lastSelectedIdx) {
-                    // 刚移入新卡牌，重置计时器
-                    lastSelectedIdx = currentHoverIdx;
-                    hoverStartTime = performance.now();
-                    ring.style.borderColor = 'var(--accent-green)'; // 正常绿色
-                } else {
-                    // 持续停留在同一张卡
-                    const dwellTime = performance.now() - hoverStartTime;
-                    
-                    // 视觉反馈：光圈变色表示即将触发
-                    if (dwellTime > 200) ring.style.borderColor = '#fff'; 
-
-                    if (dwellTime > HOVER_TRIGGER_TIME) {
-                        const targetCard = cards[currentHoverIdx];
-                        if (!targetCard.classList.contains('flipped')) {
-                            flipCard(targetCard);
+                    hovering = true;
+                    if (!card.classList.contains("flipped")) {
+                        card.classList.add("hovered");
+                        
+                        // 触发翻牌：必须在卡片上做出捏合动作
+                        if (isPinching && !pinchTriggered) {
+                            flipCard(card);
+                            pinchTriggered = true; // 防止连续触发
                         }
                     }
+                } else {
+                    card.classList.remove("hovered");
                 }
-            } else {
-                lastSelectedIdx = -1;
-                ring.style.borderColor = 'var(--accent-green)';
-            }
+            });
+
+            if (!isPinching) pinchTriggered = false; // 松开手后重置触发器
+            
+            if (hovering) statusText.innerText = "TARGET LOCKED // PINCH TO REVEAL";
+            else statusText.innerText = "SEARCHING...";
         }
 
         function flipCard(card) {
-            card.classList.add('flipped');
-            // 触发粒子
+            if (card.classList.contains("flipped")) return;
+            card.classList.remove("hovered");
+            card.classList.add("flipped");
+            
+            // 触发爆炸特效
             const rect = card.getBoundingClientRect();
-            spawnParticles(rect.left + rect.width/2, rect.top + rect.height/2);
+            explode(rect.left + rect.width/2, rect.top + rect.height/2);
         }
 
-        /* --- 7. 星光粒子系统 --- */
-        let particles = [];
-        function resizeCanvas() { particleCanvas.width = window.innerWidth; particleCanvas.height = window.innerHeight; }
-        window.addEventListener('resize', resizeCanvas);
+        /* --- 5. 粒子爆炸引擎 (Canvas) --- */
+        function resizeCanvas() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
+        window.onresize = resizeCanvas;
 
-        function spawnParticles(x, y) {
-            for(let i=0; i<40; i++) {
+        function explode(x, y) {
+            // 瞬间生成100个粒子
+            for (let i = 0; i < 100; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const speed = Math.random() * 8 + 2; // 高速
                 particles.push({
-                    x, y,
-                    vx: (Math.random() - 0.5) * 12,
-                    vy: (Math.random() - 0.5) * 12,
-                    life: 1,
-                    color: `hsl(${40 + Math.random()*20}, 100%, 70%)` // 金色
+                    x: x, y: y,
+                    vx: Math.cos(angle) * speed,
+                    vy: Math.sin(angle) * speed,
+                    life: 1.0,
+                    size: Math.random() * 4 + 1,
+                    color: `rgba(255, 255, 255, ${Math.random()})`
+                });
+            }
+            // 混入一些绿色粒子
+            for (let i = 0; i < 30; i++) {
+                 const angle = Math.random() * Math.PI * 2;
+                 const speed = Math.random() * 10 + 5; 
+                 particles.push({
+                    x: x, y: y,
+                    vx: Math.cos(angle) * speed,
+                    vy: Math.sin(angle) * speed,
+                    life: 1.0,
+                    size: 2,
+                    color: `rgba(0, 255, 157, ${Math.random()})` // 荧光绿
                 });
             }
         }
 
         function updateParticles() {
-            ctx.clearRect(0, 0, particleCanvas.width, particleCanvas.height);
-            particles.forEach((p, i) => {
-                p.x += p.vx; p.y += p.vy; p.vy += 0.2; p.life -= 0.02;
-                ctx.globalAlpha = p.life;
-                ctx.fillStyle = p.color;
-                ctx.beginPath();
-                ctx.arc(p.x, p.y, Math.random()*3 + 1, 0, Math.PI*2);
-                ctx.fill();
-                if(p.life <= 0) particles.splice(i, 1);
-            });
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // 绘制背景微弱星尘
+            if(Math.random() > 0.95) {
+                ctx.fillStyle = "rgba(255,255,255,0.5)";
+                ctx.fillRect(Math.random()*canvas.width, Math.random()*canvas.height, 1, 1);
+            }
+
+            for (let i = particles.length - 1; i >= 0; i--) {
+                let p = particles[i];
+                p.x += p.vx;
+                p.y += p.vy;
+                p.life -= 0.02; // 消失速度
+                
+                // 摩擦力
+                p.vx *= 0.95;
+                p.vy *= 0.95;
+
+                if (p.life <= 0) {
+                    particles.splice(i, 1);
+                } else {
+                    ctx.fillStyle = p.color;
+                    ctx.globalAlpha = p.life;
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+            ctx.globalAlpha = 1;
         }
 
+        init();
     </script>
 </body>
 </html>
