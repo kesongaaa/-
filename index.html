@@ -3,709 +3,602 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Three.js 塔罗手势占卜 (MediaPipe)</title>
+    <title>AI 手势极速狂飙 (WebGL + MediaPipe)</title>
     <style>
-        body { margin: 0; overflow: hidden; background-color: #050505; color: #ddd; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-        #canvas-container { width: 100vw; height: 100vh; position: absolute; top: 0; left: 0; z-index: 1; }
-        
-        /* UI Overlay */
-        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 2; pointer-events: none; display: flex; flex-direction: column; justify-content: space-between; }
-        .pointer-events-auto { pointer-events: auto; }
-        
-        /* Loading */
-        #loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.8); padding: 20px; border: 1px solid #444; border-radius: 8px; text-align: center; pointer-events: auto; }
-        
-        /* Header & Controls */
-        #header { padding: 20px; display: flex; justify-content: space-between; align-items: flex-start; background: linear-gradient(to bottom, rgba(0,0,0,0.8), transparent); }
-        .hud-box { background: rgba(0, 0, 0, 0.5); padding: 10px 15px; border-radius: 8px; border: 1px solid rgba(255, 215, 0, 0.3); backdrop-filter: blur(4px); }
-        
-        /* Mode Switcher */
-        #controls button { background: #333; color: #fff; border: 1px solid #666; padding: 8px 12px; cursor: pointer; border-radius: 4px; transition: 0.2s; }
-        #controls button:hover { background: #555; }
-        #controls button.active { background: #8b7d28; border-color: #ffd700; }
-        
-        /* Webcam Preview */
-        #webcam-container { width: 160px; height: 120px; border: 2px solid #333; border-radius: 8px; overflow: hidden; position: relative; margin-top: 10px; transform: scaleX(-1); }
-        #input_video { width: 100%; height: 100%; object-fit: cover; }
-        
-        /* Card Info */
-        #card-display { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; opacity: 0; transition: opacity 0.5s; pointer-events: none; }
-        #card-display.show { opacity: 1; }
-        #card-display h1 { font-size: 2.5rem; margin: 0; text-shadow: 0 0 10px #ffd700; color: #ffd700; }
-        #card-display h2 { font-size: 1.2rem; color: #aaa; margin: 5px 0; font-style: italic; }
-        #card-display p { max-width: 400px; margin: 10px auto; background: rgba(0,0,0,0.7); padding: 10px; border-radius: 4px; }
-        
-        /* History Panel */
-        #history-panel { position: absolute; top: 80px; right: 20px; width: 220px; max-height: 70vh; overflow-y: auto; background: rgba(10, 10, 10, 0.85); border-left: 2px solid #333; padding: 10px; pointer-events: auto; }
-        #history-panel h3 { margin-top: 0; border-bottom: 1px solid #444; padding-bottom: 5px; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; }
-        .history-item { display: flex; align-items: center; margin-bottom: 8px; font-size: 12px; border-bottom: 1px solid #222; padding-bottom: 4px; }
-        .history-thumb { width: 30px; height: 50px; background-size: cover; margin-right: 8px; border-radius: 2px; }
-        .history-info { display: flex; flex-direction: column; }
-        .history-name { color: #ffd700; font-weight: bold; }
-        .history-meaning { color: #aaa; font-size: 10px; }
-        .reversed { color: #ff6b6b; }
-
-        /* Gesture Icons */
-        .gesture-guide { display: flex; gap: 15px; margin-top: 10px; font-size: 12px; color: #888; }
-        .g-icon { font-weight: bold; color: #ccc; }
-    </style>
-
-    <!-- Import Maps for Three.js -->
-    <script type="importmap">
-        {
-            "imports": {
-                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
-            }
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #000;
+            font-family: 'Courier New', Courier, monospace;
+            user-select: none;
         }
-    </script>
-    <!-- MediaPipe Hands -->
+
+        /* 游戏画布 */
+        #gameCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 1;
+        }
+
+        /* UI 层 */
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10;
+            pointer-events: none; /* 让点击穿透 */
+        }
+
+        /* 仪表盘 */
+        .hud-panel {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            color: #0ff;
+            text-shadow: 0 0 10px #0ff;
+        }
+        
+        .speed-box {
+            font-size: 48px;
+            font-weight: bold;
+        }
+        
+        .label {
+            font-size: 14px;
+            opacity: 0.8;
+        }
+
+        /* 状态显示 */
+        .status-panel {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: #fff;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid #333;
+        }
+
+        /* 摄像头预览 (右上角) */
+        .cam-preview {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 160px;
+            height: 120px;
+            border: 2px solid #0ff;
+            background: #000;
+            z-index: 11;
+            transform: scaleX(-1); /* 镜像显示 */
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        #input_video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        /* 引导提示 */
+        .guide {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            text-align: right;
+            color: #ff00ff;
+            text-shadow: 0 0 5px #ff00ff;
+        }
+
+        /* 加载遮罩 */
+        #loader {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #000;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 999;
+            color: #fff;
+            transition: opacity 0.5s;
+        }
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 5px solid #333;
+            border-top: 5px solid #0ff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 20px;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+    </style>
+    
+    <!-- 引入 Three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    
+    <!-- 引入 MediaPipe Hands -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
 </head>
 <body>
 
-    <div id="loading">正在初始化神秘学引擎...<br><small>请允许摄像头权限以体验手势操作</small></div>
+    <!-- 加载界面 -->
+    <div id="loader">
+        <div class="spinner"></div>
+        <h2 id="loader-text">正在初始化引擎...</h2>
+        <p>请允许摄像头权限以体验手势控制</p>
+    </div>
 
-    <div id="canvas-container"></div>
-
+    <!-- UI 层 -->
     <div id="ui-layer">
-        <div id="header">
-            <div class="hud-box pointer-events-auto" id="controls">
-                <div>模式选择：</div>
-                <button id="btn-hand" class="active">🖐 手势模式</button>
-                <button id="btn-mouse">🖱️ 鼠标模式</button>
-                <div id="webcam-container">
-                    <video id="input_video"></video>
-                </div>
-                <div class="gesture-guide">
-                    <div><span class="g-icon">🖐 张开</span><br>寻找</div>
-                    <div><span class="g-icon">👌 捏合</span><br>抓取</div>
-                    <div><span class="g-icon">✊ 握拳</span><br>确认/化灰</div>
-                </div>
-            </div>
-            
-            <div class="hud-box">
-                <div id="status-text">等待指令...</div>
-            </div>
+        <div class="status-panel">
+            <div>系统状态: <span id="sys-status" style="color:yellow">初始化中...</span></div>
+            <div>控制模式: <span id="ctrl-mode">等待输入...</span></div>
+            <div>转向角度: <span id="steer-val">0.00</span></div>
         </div>
 
-        <div id="card-display">
-            <h1 id="card-name">The Fool</h1>
-            <h2 id="card-orientation">正位 (Upright)</h2>
-            <p id="card-desc">新的开始，冒险，无畏...</p>
+        <div class="cam-preview">
+            <video id="input_video" autoplay playsinline muted></video>
+            <!-- Canvas 用于绘制手势骨架调试 (可选，为了性能此处不绘制复杂骨架) -->
         </div>
 
-        <div id="history-panel">
-            <h3>抽卡记录</h3>
-            <div id="history-list"></div>
+        <div class="hud-panel">
+            <div class="label">SPEED (KM/H)</div>
+            <div class="speed-box"><span id="speed-display">0</span></div>
+        </div>
+
+        <div class="guide">
+            <h3>驾驶指南</h3>
+            <p>🖐️ 举起单手</p>
+            <p>⬅️ 手向左倾斜 = 左转</p>
+            <p>➡️ 手向右倾斜 = 右转</p>
+            <p>⌨️ 备用: 键盘左右键</p>
         </div>
     </div>
 
-    <script type="module">
-        import * as THREE from 'three';
-        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    <!-- 游戏画布容器 -->
+    <div id="gameCanvas"></div>
 
-        // --- Configuration & Data ---
-        const TAROT_DATA = [
-            { id: 0, name: "The Fool", img: "m00.jpg", up: "新的开始，纯真，自发性，自由精神。", rev: "鲁莽，冒险，不考虑后果，愚蠢。" },
-            { id: 1, name: "The Magician", img: "m01.jpg", up: "意志力，欲望，创造，显化。", rev: "操纵，计划不周，潜能未发，幻觉。" },
-            { id: 2, name: "The High Priestess", img: "m02.jpg", up: "直觉，潜意识，内在声音，神秘。", rev: "压抑情感，由于，秘密被揭露。" },
-            { id: 3, name: "The Empress", img: "m03.jpg", up: "丰饶，女性特质，自然，养育。", rev: "创造力受阻，依赖，空虚。" },
-            { id: 4, name: "The Emperor", img: "m04.jpg", up: "权威，结构，控制，父性。", rev: "暴政，僵化，冷酷，缺乏纪律。" },
-            { id: 5, name: "The Hierophant", img: "m05.jpg", up: "传统，一致性，道德，教育。", rev: "反叛，非传统，新的信仰，限制。" },
-            { id: 6, name: "The Lovers", img: "m06.jpg", up: "爱，和谐，关系，价值观一致。", rev: "不和谐，不平衡，价值观冲突。" },
-            { id: 7, name: "The Chariot", img: "m07.jpg", up: "控制，意志力，成功，行动。", rev: "失去控制，缺乏方向，攻击性。" },
-            { id: 8, name: "Strength", img: "m08.jpg", up: "力量，勇气，说服力，影响力。", rev: "自我怀疑，软弱，不安全感。" },
-            { id: 9, name: "The Hermit", img: "m09.jpg", up: "寻找灵魂，反思，独处，内在指引。", rev: "孤独，孤立，偏执，退缩。" },
-            { id: 10, name: "Wheel of Fortune", img: "m10.jpg", up: "业力，好运，生命周期，命运。", rev: "厄运，抵抗变化，破坏循环。" },
-            { id: 11, name: "Justice", img: "m11.jpg", up: "正义，公平，真理，因果。", rev: "不公，缺乏责任，不诚实。" },
-            { id: 12, name: "The Hanged Man", img: "m12.jpg", up: "暂停，投降，放手，新视角。", rev: "拖延，抵抗，停滞，无谓牺牲。" },
-            { id: 13, name: "Death", img: "m13.jpg", up: "结束，转变，过渡，放手。", rev: "抵抗改变，无法前进，依赖过去。" },
-            { id: 14, name: "Temperance", img: "m14.jpg", up: "平衡，适度，耐心，目标。", rev: "不平衡，过度，缺乏长期视野。" },
-            { id: 15, name: "The Devil", img: "m15.jpg", up: "束缚，上瘾，物质主义，性。", rev: "挣脱束缚，恢复力量，打破枷锁。" },
-            { id: 16, name: "The Tower", img: "m16.jpg", up: "突变，混乱，启示，觉醒。", rev: "避免灾难，恐惧改变，推迟不可避免。" },
-            { id: 17, name: "The Star", img: "m17.jpg", up: "希望，信仰，目的，更新，灵性。", rev: "缺乏信心，绝望，灰心。" },
-            { id: 18, name: "The Moon", img: "m18.jpg", up: "幻觉，恐惧，焦虑，潜意识。", rev: "释放恐惧，压抑情感，清晰。" },
-            { id: 19, name: "The Sun", img: "m19.jpg", up: "积极，温暖，成功，活力。", rev: "内心孩童，过度乐观，不切实际。" },
-            { id: 20, name: "Judgement", img: "m20.jpg", up: "审判，重生，内在召唤，宽恕。", rev: "自我怀疑，拒绝召唤，忽视因果。" },
-            { id: 21, name: "The World", img: "m21.jpg", up: "完成，整合，成就，旅行。", rev: "未完成，缺乏封闭，走捷径。" }
-        ];
+<script>
+/**
+ * ============================================================================
+ * 第一部分：全局变量与配置
+ * ============================================================================
+ */
+const CONFIG = {
+    maxSpeed: 280,           // 最大显示速度
+    acceleration: 0.5,       // 加速度
+    friction: 0.2,           // 摩擦力
+    turnSpeed: 0.08,         // 转向灵敏度
+    roadWidth: 20,           // 赛道宽度限制
+    cameraHeight: 2.5,       // 摄像机高度（模拟驾驶位）
+    fovBase: 75,             // 基础 FOV
+    fovMax: 100,             // 极速时的 FOV
+    colors: {
+        skyTop: 0x000000,
+        skyBottom: 0x220033,
+        grid: 0xff00ff,
+        road: 0x111111
+    }
+};
 
-        // Using Wikipedia commons or GitHub hosted RWS deck
-        const IMG_BASE_URL = "https://raw.githubusercontent.com/tobyleft/tarot-images/main/rws/";
-        const BACK_IMG_URL = "https://i.imgur.com/P4Mh00o.jpeg"; // Generic pattern
+// 游戏状态
+let gameState = {
+    speed: 0,             // 当前逻辑速度 (0 - 100)
+    displaySpeed: 0,      // UI显示速度
+    playerX: 0,           // 玩家横向位置
+    steerInput: 0,        // 转向输入 (-1 到 1)
+    distance: 0,          // 行驶距离
+    isCameraActive: false // 摄像头是否可用
+};
 
-        // --- Game State & Variables ---
-        let scene, camera, renderer, raycaster;
-        let cardMesh, cardBackMesh, particles;
-        let cursorMesh, glowLight;
-        
-        let availableCards = [...TAROT_DATA];
-        let currentCardData = null;
-        let isReversed = false;
+// DOM 元素
+const elSpeed = document.getElementById('speed-display');
+const elStatus = document.getElementById('sys-status');
+const elMode = document.getElementById('ctrl-mode');
+const elSteer = document.getElementById('steer-val');
+const elLoader = document.getElementById('loader');
+const elLoaderText = document.getElementById('loader-text');
 
-        let interactionMode = 'HAND'; // 'HAND' or 'MOUSE'
-        let mouse = new THREE.Vector2();
-        let handCursorPos = new THREE.Vector3(); // Normalized -1 to 1
-        
-        // Gesture State
-        let gestureState = 'OPEN'; // OPEN, PINCH, FIST, POINT
-        let isHolding = false;
-        let isConfirmed = false;
-        
-        // Animation Vars
-        let cardTargetPos = new THREE.Vector3(0, 0, 0);
-        let cardTargetRot = new THREE.Euler(0, 0, 0);
-        let clock = new THREE.Clock();
+/**
+ * ============================================================================
+ * 第二部分：Three.js 3D 场景构建
+ * ============================================================================
+ */
+let scene, camera, renderer;
+let roadMesh, gridMesh;
+let roadsideObjects = [];
+const OBJECT_POOL_SIZE = 40; // 路边物体池大小
 
-        // --- Init Three.js ---
-        function initThree() {
-            const container = document.getElementById('canvas-container');
-            
-            scene = new THREE.Scene();
-            scene.background = new THREE.Color(0x111111);
-            scene.fog = new THREE.FogExp2(0x111111, 0.02);
+function initThreeJS() {
+    // 1. 场景与相机
+    scene = new THREE.Scene();
+    scene.fog = new THREE.FogExp2(CONFIG.colors.skyBottom, 0.015); // 雾效增强速度感和遮挡远方
+    scene.background = new THREE.Color(CONFIG.colors.skyBottom);
 
-            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
-            camera.position.set(0, 0, 5);
+    camera = new THREE.PerspectiveCamera(CONFIG.fovBase, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.set(0, CONFIG.cameraHeight, 0);
 
-            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            renderer.shadowMap.enabled = true;
-            container.appendChild(renderer.domElement);
+    // 2. 渲染器
+    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // 性能优化
+    document.getElementById('gameCanvas').appendChild(renderer.domElement);
 
-            // Lighting
-            const ambientLight = new THREE.AmbientLight(0x404040, 2);
-            scene.add(ambientLight);
+    // 3. 灯光 (赛博朋克不需要太阳光，主要是自发光和环境光)
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+    scene.add(ambientLight);
 
-            const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
-            dirLight.position.set(2, 5, 5);
-            dirLight.castShadow = true;
-            scene.add(dirLight);
+    // 4. 创建路面 (使用程序化纹理)
+    const roadGeometry = new THREE.PlaneGeometry(40, 400, 10, 100);
+    // 生成沥青纹理
+    const roadTexture = createProceduralTexture(); 
+    roadTexture.wrapS = THREE.RepeatWrapping;
+    roadTexture.wrapT = THREE.RepeatWrapping;
+    roadTexture.repeat.set(1, 20);
+    
+    const roadMaterial = new THREE.MeshStandardMaterial({ 
+        map: roadTexture, 
+        color: 0x888888,
+        roughness: 0.8 
+    });
+    roadMesh = new THREE.Mesh(roadGeometry, roadMaterial);
+    roadMesh.rotation.x = -Math.PI / 2;
+    roadMesh.position.z = -100; // 往前延伸
+    scene.add(roadMesh);
 
-            glowLight = new THREE.PointLight(0xffd700, 0, 5);
-            scene.add(glowLight);
+    // 5. 地面网格 (Retro Grid 效果)
+    const gridHelper = new THREE.GridHelper(200, 100, CONFIG.colors.grid, 0x220044);
+    gridHelper.position.y = -0.1;
+    gridHelper.position.z = -50;
+    scene.add(gridHelper);
+    gridMesh = gridHelper;
 
-            // Raycaster
-            raycaster = new THREE.Raycaster();
+    // 6. 路边物体池 (建筑物/柱子)
+    const boxGeo = new THREE.BoxGeometry(1, 1, 1);
+    const boxMat = new THREE.MeshBasicMaterial({ color: 0x00ffff, wireframe: true });
 
-            // Cursor Visual
-            const cursorGeo = new THREE.SphereGeometry(0.05, 16, 16);
-            const cursorMat = new THREE.MeshBasicMaterial({ color: 0x00ffff, opacity: 0.7, transparent: true });
-            cursorMesh = new THREE.Mesh(cursorGeo, cursorMat);
-            scene.add(cursorMesh);
+    for(let i = 0; i < OBJECT_POOL_SIZE; i++) {
+        const mesh = new THREE.Mesh(boxGeo, boxMat);
+        // 随机初始化位置 (在视野外)
+        resetObject(mesh, true);
+        scene.add(mesh);
+        roadsideObjects.push(mesh);
+    }
 
-            // Initial Card Spawn
-            spawnNewCard();
+    // 监听窗口调整
+    window.addEventListener('resize', onWindowResize, false);
+}
 
-            // Event Listeners
-            window.addEventListener('resize', onWindowResize);
-            document.addEventListener('mousemove', onMouseMove);
-            document.addEventListener('mousedown', () => { if(interactionMode === 'MOUSE') { gestureState = 'PINCH'; checkInteraction(); } });
-            document.addEventListener('mouseup', () => { if(interactionMode === 'MOUSE') { gestureState = 'OPEN'; releaseCard(); } });
-            document.addEventListener('contextmenu', (e) => { 
-                e.preventDefault(); 
-                if(interactionMode === 'MOUSE' && isHolding) { gestureState = 'FIST'; confirmSelection(); }
-            });
+// 辅助函数：创建程序化纹理（代替图片文件）
+function createProceduralTexture() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 512;
+    const ctx = canvas.getContext('2d');
+    
+    // 背景色
+    ctx.fillStyle = '#222';
+    ctx.fillRect(0, 0, 512, 512);
+    
+    // 杂色 (沥青感)
+    for(let i=0; i<5000; i++) {
+        ctx.fillStyle = `rgba(255,255,255,${Math.random()*0.1})`;
+        ctx.fillRect(Math.random()*512, Math.random()*512, 2, 2);
+    }
+    
+    // 车道线
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(250, 0, 12, 256); // 虚线的一部分
+    ctx.fillRect(250, 300, 12, 212);
 
-            animate();
-        }
+    // 边缘线
+    ctx.fillStyle = '#ff0055';
+    ctx.fillRect(10, 0, 10, 512);
+    ctx.fillRect(492, 0, 10, 512);
 
-        // --- Card Logic ---
-        function spawnNewCard() {
-            if (availableCards.length === 0) {
-                availableCards = [...TAROT_DATA]; // Reset deck if empty
-            }
+    const texture = new THREE.CanvasTexture(canvas);
+    return texture;
+}
 
-            // Remove old mesh if exists
-            if (cardMesh) { scene.remove(cardMesh); cardMesh = null; }
-            if (particles) { scene.remove(particles); particles = null; }
+function resetObject(mesh, initial = false) {
+    // 将物体放回远方
+    mesh.position.z = initial ? -Math.random() * 300 : -300;
+    // 随机放在左侧或右侧
+    const side = Math.random() > 0.5 ? 1 : -1;
+    mesh.position.x = side * (15 + Math.random() * 20); 
+    mesh.position.y = Math.random() * 5; // 随机高度
+    
+    // 随机大小
+    const scaleY = 2 + Math.random() * 10;
+    const scaleXZ = 1 + Math.random() * 2;
+    mesh.scale.set(scaleXZ, scaleY, scaleXZ);
+}
 
-            // Random Pick
-            const idx = Math.floor(Math.random() * availableCards.length);
-            currentCardData = availableCards[idx];
-            availableCards.splice(idx, 1);
+function onWindowResize() {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+}
 
-            // Orientation
-            isReversed = Math.random() < 0.5;
+/**
+ * ============================================================================
+ * 第三部分：MediaPipe Hands AI 控制
+ * ============================================================================
+ */
+let handKeypoints = null;
 
-            // Texture Loading
-            const loader = new THREE.TextureLoader();
-            const texFront = loader.load(IMG_BASE_URL + currentCardData.img, undefined, undefined, (err) => {
-                 // Fallback color if load fails
-                 if(cardMesh) cardMesh.material[4].color.setHex(0x550000);
-            });
-            const texBack = loader.load(BACK_IMG_URL);
-            texFront.colorSpace = THREE.SRGBColorSpace;
-            texBack.colorSpace = THREE.SRGBColorSpace;
+function initMediaPipe() {
+    elLoaderText.innerText = "加载 AI 模型中 (可能需要几十秒)...";
+    
+    const videoElement = document.getElementById('input_video');
+    const hands = new Hands({locateFile: (file) => {
+        return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+    }});
 
-            // Geometry (Box for thickness)
-            const geometry = new THREE.BoxGeometry(1.5, 2.6, 0.02);
-            
-            // Materials: Right, Left, Top, Bottom, Front, Back
-            const sideMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
-            const faceMat = new THREE.MeshStandardMaterial({ map: texFront, roughness: 0.4, metalness: 0.1 });
-            const backMat = new THREE.MeshStandardMaterial({ map: texBack, roughness: 0.6 });
-            
-            // Note: BoxGeometry face indices: 0,1 (x), 2,3 (y), 4 (+z Front), 5 (-z Back)
-            const materials = [sideMat, sideMat, sideMat, sideMat, faceMat, backMat];
+    hands.setOptions({
+        maxNumHands: 1,
+        modelComplexity: 0, // 0 性能最好，1 精度最好。游戏用0足够
+        minDetectionConfidence: 0.5,
+        minTrackingConfidence: 0.5
+    });
 
-            cardMesh = new THREE.Mesh(geometry, materials);
-            
-            // Initial Position (Deck pile position, slightly random)
-            cardMesh.position.set((Math.random()-0.5)*0.5, -1.5, -1);
-            cardMesh.rotation.set(-Math.PI/4, 0, Math.PI); // Face down initially
+    hands.onResults(onHandsResults);
 
-            scene.add(cardMesh);
-
-            // Reset States
-            isHolding = false;
-            isConfirmed = false;
-            document.getElementById('card-display').classList.remove('show');
-            document.getElementById('status-text').innerText = interactionMode === 'HAND' ? "手掌张开：寻找 | 捏合：抓取" : "鼠标悬停：寻找 | 左键：抓取";
-            
-            // Apply logic for orientation when revealed
-            // We store the target rotation for the "Reveal" phase
-        }
-
-        // --- Interaction Logic ---
-        function checkInteraction() {
-            if (isConfirmed || !cardMesh) return;
-
-            // Raycast from camera to cursor position
-            // Update Raycaster
-            if (interactionMode === 'MOUSE') {
-                raycaster.setFromCamera(mouse, camera);
-            } else {
-                // Map 3D cursor position back to screen space for raycaster (approx) or cast from camera to world pos
-                const direction = cursorMesh.position.clone().sub(camera.position).normalize();
-                raycaster.set(camera.position, direction);
-            }
-
-            const intersects = raycaster.intersectObject(cardMesh);
-            const isHover = intersects.length > 0;
-
-            if (isHover) {
-                document.body.style.cursor = 'pointer';
-                if (!isHolding) {
-                    glowLight.position.copy(cardMesh.position);
-                    glowLight.intensity = 2;
-                }
-            } else {
-                document.body.style.cursor = 'default';
-                if (!isHolding) glowLight.intensity = 0;
-            }
-
-            // Logic: GRAB
-            if (gestureState === 'PINCH' && isHover && !isHolding) {
-                isHolding = true;
-                glowLight.color.setHex(0x00ff00);
-            }
-        }
-
-        function updateCardPhysics() {
-            if (!cardMesh || isConfirmed) return;
-
-            if (isHolding) {
-                // Card follows cursor
-                // We want the card to float in front of the camera
-                const targetPos = cursorMesh.position.clone();
-                // Add a little offset towards camera
-                // targetPos.z += 0.5; 
-                
-                // Lerp Position
-                cardMesh.position.lerp(targetPos, 0.1);
-
-                // Lerp Rotation: Face the camera upright
-                const targetQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, 0));
-                
-                // If it was face down, we flip it to face up (Front side is +Z)
-                // If isReversed is true, we rotate 180 on Z
-                
-                let revRot = isReversed ? Math.PI : 0;
-                
-                // Basic look at camera
-                cardMesh.lookAt(camera.position);
-                
-                // Adjust for upright/reverse and ensure front face is visible
-                // Initial geometry: Front is +Z. lookAt makes +Z point to camera.
-                // If reversed, rotate around Z axis local
-                cardMesh.rotateZ(revRot);
-
-                document.getElementById('status-text').innerText = interactionMode === 'HAND' ? "✊ 握拳：确认抽牌" : "🖱️ 右键：确认抽牌";
-            } else {
-                // Float gently back to idle or drift
-                cardMesh.position.y += Math.sin(clock.getElapsedTime()) * 0.002;
-                // If not held, maybe rotate slowly or lie on table? 
-                // For this game, let's keep it floating near where it was left or drift down
-                if (cardMesh.position.y < -1.5) cardMesh.position.y = -1.5;
-            }
-        }
-
-        function releaseCard() {
-            isHolding = false;
-            glowLight.color.setHex(0xffd700);
-        }
-
-        function confirmSelection() {
-            if (!isHolding || isConfirmed) return;
-            isConfirmed = true;
-            isHolding = false;
-
-            // UI Update
-            const uiDisp = document.getElementById('card-display');
-            document.getElementById('card-name').innerText = currentCardData.name;
-            const orientationText = isReversed ? "逆位 (Reversed)" : "正位 (Upright)";
-            document.getElementById('card-orientation').innerText = orientationText;
-            document.getElementById('card-orientation').className = isReversed ? "reversed" : "";
-            document.getElementById('card-desc').innerText = isReversed ? currentCardData.rev : currentCardData.up;
-            uiDisp.classList.add('show');
-
-            document.getElementById('status-text').innerText = "命运已定。";
-
-            // Add to history
-            addToHistory(currentCardData, isReversed);
-
-            // Trigger Ash Effect
-            createAshEffect();
-
-            // Auto reset timer
+    // 启动摄像头
+    const cameraUtils = new Camera(videoElement, {
+        onFrame: async () => {
+            await hands.send({image: videoElement});
+        },
+        width: 320,
+        height: 240
+    });
+    
+    cameraUtils.start()
+        .then(() => {
+            elStatus.innerText = "摄像头已连接";
+            elStatus.style.color = "#0f0";
+            gameState.isCameraActive = true;
+            // 隐藏加载层
             setTimeout(() => {
-                spawnNewCard();
-            }, 6000);
+                elLoader.style.opacity = 0;
+                setTimeout(() => elLoader.style.display = 'none', 500);
+            }, 1000);
+        })
+        .catch(err => {
+            console.error(err);
+            elStatus.innerText = "摄像头失败 - 切换至键盘模式";
+            elStatus.style.color = "#f00";
+            gameState.isCameraActive = false;
+            elMode.innerText = "键盘 (方向键)";
+            // 即使失败也隐藏加载层
+            elLoader.style.display = 'none';
+        });
+}
+
+function onHandsResults(results) {
+    if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+        handKeypoints = results.multiHandLandmarks[0];
+        updateSteeringFromHand(handKeypoints);
+        elMode.innerText = "AI 手势控制";
+        elMode.style.color = "#0ff";
+    } else {
+        // 如果手移出画面，缓慢回正
+        if (gameState.isCameraActive) {
+            gameState.steerInput *= 0.9;
         }
+    }
+}
 
-        function addToHistory(data, reversed) {
-            const list = document.getElementById('history-list');
-            const item = document.createElement('div');
-            item.className = 'history-item';
-            
-            // Creating a small thumbnail style
-            const imgUrl = IMG_BASE_URL + data.img;
-            
-            item.innerHTML = `
-                <div class="history-thumb" style="background-image: url('${imgUrl}'); transform: ${reversed ? 'rotate(180deg)' : 'none'}"></div>
-                <div class="history-info">
-                    <span class="history-name">${data.name}</span>
-                    <span class="history-meaning ${reversed ? 'reversed' : ''}">${reversed ? '逆位' : '正位'}</span>
-                </div>
-            `;
-            list.prepend(item);
-        }
+/**
+ * 核心逻辑：从手部关键点计算转向
+ * 逻辑：计算手腕(0)到中指指根(9)的向量角度
+ */
+function updateSteeringFromHand(landmarks) {
+    const wrist = landmarks[0];
+    const middleBase = landmarks[9];
 
-        // --- Ash Particle Effect ---
-        function createAshEffect() {
-            // Sampling points from the box volume/surface
-            const particleCount = 3000;
-            const geo = new THREE.BufferGeometry();
-            const positions = [];
-            const speeds = [];
-            const opacity = [];
-            const sizes = [];
+    // 计算斜率带来的角度变化
+    // x 轴方向差异 vs y 轴方向差异
+    const dx = middleBase.x - wrist.x;
+    const dy = middleBase.y - wrist.y;
+    
+    // 计算旋转角 (弧度)
+    // 正常竖直手掌时，dy 应该是负数 (y向下为正)，dx接近0
+    // 我们用 atan2 计算角度，然后映射到 -1 到 1
+    // 注意：MediaPipe x 是 0(左)-1(右)，y 是 0(上)-1(下)
+    
+    // 简化算法：仅仅根据 x 的偏移量来判断倾斜是不够的，因为手可以在屏幕任何位置。
+    // 我们需要的是手掌本身的局部旋转。
+    
+    // 角度计算：以手腕为原点
+    // 垂直向上时 angle 约为 -PI/2 (-90度)
+    let angle = Math.atan2(dy, dx); 
+    
+    // 转换到度数方便调试
+    let degrees = angle * (180 / Math.PI);
+    
+    // 正常垂直是 -90度。
+    // 向左倾斜（逆时针）会变成 -100, -120 等。
+    // 向右倾斜（顺时针）会变成 -80, -60 等。
+    
+    // 设定阈值：+- 45度范围内有效
+    // 标准值 -90。 
+    // -45 (右极限) < -90 < -135 (左极限)
+    
+    let rawSteer = 0;
+    const centerDeg = -90;
+    const range = 45;
 
-            // Get card current world transform
-            cardMesh.updateMatrixWorld();
-            const center = cardMesh.position.clone();
-            const rotation = cardMesh.rotation.clone();
+    // 简单的死区处理和归一化
+    let diff = degrees - centerDeg;
+    
+    // 钳制范围
+    if (diff > range) diff = range;
+    if (diff < -range) diff = -range;
+    
+    // 映射到 -1 (左) 到 1 (右)
+    // 注意：角度增加是顺时针(右)，角度减少是逆时针(左)
+    // diff positive -> Right turn
+    // diff negative -> Left turn
+    rawSteer = diff / range; 
 
-            const width = 1.5; const height = 2.6;
-            
-            for(let i=0; i<particleCount; i++) {
-                // Local random pos
-                let x = (Math.random() - 0.5) * width;
-                let y = (Math.random() - 0.5) * height;
-                let z = (Math.random() - 0.5) * 0.05;
+    // 增加一点死区，防止手抖
+    if (Math.abs(rawSteer) < 0.1) rawSteer = 0;
 
-                // Apply card rotation/pos manually or just spawn cloud at location
-                // Simple version: Spawn cloud at card position, no complex matrix math for demo brevity
-                // Better: transform local point to world
-                let vec = new THREE.Vector3(x, y, z);
-                vec.applyEuler(rotation);
-                vec.add(center);
+    // 平滑插值 (Lerp)
+    gameState.steerInput += (rawSteer - gameState.steerInput) * 0.2;
+}
 
-                positions.push(vec.x, vec.y, vec.z);
-                
-                // Velocity: Up + Noise
-                speeds.push(
-                    (Math.random() - 0.5) * 0.02, // vx
-                    Math.random() * 0.05 + 0.01,  // vy (up)
-                    (Math.random() - 0.5) * 0.02  // vz
-                );
-                
-                opacity.push(1.0);
-                sizes.push(Math.random() * 0.05 + 0.02);
-            }
 
-            geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-            geo.setAttribute('velocity', new THREE.Float32BufferAttribute(speeds, 3));
-            geo.setAttribute('alpha', new THREE.Float32BufferAttribute(opacity, 1));
-            geo.setAttribute('size', new THREE.Float32BufferAttribute(sizes, 1));
+/**
+ * ============================================================================
+ * 第四部分：键盘 Fallback 控制
+ * ============================================================================
+ */
+const keys = { left: false, right: false };
+document.addEventListener('keydown', (e) => {
+    if(e.code === 'ArrowLeft' || e.code === 'KeyA') keys.left = true;
+    if(e.code === 'ArrowRight' || e.code === 'KeyD') keys.right = true;
+    if(!gameState.isCameraActive) elMode.innerText = "键盘控制生效";
+});
+document.addEventListener('keyup', (e) => {
+    if(e.code === 'ArrowLeft' || e.code === 'KeyA') keys.left = false;
+    if(e.code === 'ArrowRight' || e.code === 'KeyD') keys.right = false;
+});
 
-            // Custom Shader Material for fading points
-            // Using standard PointsMaterial for simplicity in single file, manipulating alpha in loop
-            const mat = new THREE.PointsMaterial({
-                color: 0xcccccc,
-                size: 0.05,
-                transparent: true,
-                opacity: 1,
-                map: new THREE.TextureLoader().load('https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/sprites/disc.png'),
-                depthWrite: false,
-                vertexColors: false
-            });
+function updateKeyboardSteer() {
+    if (gameState.isCameraActive && handKeypoints) return; // 如果有摄像头且识别到手，忽略键盘
 
-            particles = new THREE.Points(geo, mat);
-            scene.add(particles);
+    let target = 0;
+    if (keys.left) target = -1;
+    if (keys.right) target = 1;
 
-            // Hide original card
-            cardMesh.visible = false;
-        }
+    // 键盘模拟平滑
+    gameState.steerInput += (target - gameState.steerInput) * 0.1;
+}
 
-        function updateParticles() {
-            if (!particles) return;
+/**
+ * ============================================================================
+ * 第五部分：游戏主循环与物理
+ * ============================================================================
+ */
 
-            const positions = particles.geometry.attributes.position.array;
-            const vels = particles.geometry.attributes.velocity.array;
-            const alphas = particles.geometry.attributes.alpha.array;
-            let alive = false;
+function updatePhysics() {
+    // 1. 自动加速逻辑
+    if (gameState.speed < 100) {
+        gameState.speed += CONFIG.acceleration;
+    }
+    
+    // 转向带来的减速
+    if (Math.abs(gameState.steerInput) > 0.3) {
+        gameState.speed -= CONFIG.friction * Math.abs(gameState.steerInput);
+    }
+    if (gameState.speed < 0) gameState.speed = 0;
 
-            for (let i = 0; i < positions.length / 3; i++) {
-                // Update Pos
-                positions[i*3] += vels[i*3];
-                positions[i*3+1] += vels[i*3+1]; // Y
-                positions[i*3+2] += vels[i*3+2];
+    // 2. 更新显示速度
+    gameState.displaySpeed = Math.floor((gameState.speed / 100) * CONFIG.maxSpeed);
+    
+    // 3. 更新玩家横向位置
+    // 速度越快，转向越敏感，但幅度限制
+    let moveAmount = gameState.steerInput * CONFIG.turnSpeed * (gameState.speed / 50);
+    gameState.playerX -= moveAmount; // 注意 Three.js 坐标系，-x 是左
+    
+    // 限制在赛道内
+    if (gameState.playerX > CONFIG.roadWidth) gameState.playerX = CONFIG.roadWidth;
+    if (gameState.playerX < -CONFIG.roadWidth) gameState.playerX = -CONFIG.roadWidth;
 
-                // Add Turbulence
-                vels[i*3] += (Math.random()-0.5) * 0.001;
-                vels[i*3+2] += (Math.random()-0.5) * 0.001;
+    // 4. 计算行驶距离（用于纹理滚动）
+    // 简单累加
+    gameState.distance += gameState.speed * 0.05;
+}
 
-                // Decay Alpha
-                if (alphas[i] > 0) {
-                    alphas[i] -= 0.01 + Math.random() * 0.01;
-                    if (alphas[i] < 0) alphas[i] = 0;
-                    else alive = true;
-                }
-            }
+function updateVisuals() {
+    // 1. 相机跟随
+    // 相机位置 = 基础位置 + 玩家偏移 (延迟跟随效果)
+    camera.position.x += (gameState.playerX * 0.8 - camera.position.x) * 0.1;
+    
+    // 2. 相机震动 (基于速度)
+    const shake = (gameState.speed / 100) * 0.05;
+    camera.position.y = CONFIG.cameraHeight + (Math.random() - 0.5) * shake;
+    
+    // 3. FOV 动态变化 (速度感核心)
+    const targetFov = CONFIG.fovBase + (gameState.speed / 100) * (CONFIG.fovMax - CONFIG.fovBase);
+    camera.fov += (targetFov - camera.fov) * 0.05;
+    camera.updateProjectionMatrix();
 
-            particles.geometry.attributes.position.needsUpdate = true;
-            // Hacky alpha fade via material opacity since vertex alpha requires ShaderMaterial
-            // For simple demo, we just fade the whole material or custom shader.
-            // Let's use the material opacity global decay for simplicity + scale up
-            particles.material.opacity -= 0.005;
-            
-            if (particles.material.opacity <= 0) {
-                scene.remove(particles);
-                particles = null;
-            }
-        }
-
-        // --- Render Loop ---
-        function animate() {
-            requestAnimationFrame(animate);
-
-            const dt = clock.getDelta();
-
-            // Cursor smoothing
-            if (interactionMode === 'HAND') {
-                // handCursorPos is updated by MediaPipe (0-1), map to 3D Viewport
-                // Z=0 plane (approx)
-                const vector = new THREE.Vector3(handCursorPos.x, handCursorPos.y, 0.5);
-                vector.unproject(camera);
-                const dir = vector.sub(camera.position).normalize();
-                const distance = -camera.position.z / dir.z; // Intersection with Z=0
-                // We want interactions closer to camera usually
-                const targetPos = camera.position.clone().add(dir.multiplyScalar(4)); 
-                
-                cursorMesh.position.lerp(targetPos, 0.2);
-            } else {
-                 // Mouse logic handled in raycaster update, cursor mesh follows mouse ray
-                 raycaster.setFromCamera(mouse, camera);
-                 const dist = 4;
-                 const target = new THREE.Vector3().copy(raycaster.ray.direction).multiplyScalar(dist).add(raycaster.ray.origin);
-                 cursorMesh.position.lerp(target, 0.2);
-            }
-            
-            // Visual feedback for gesture
-            if (gestureState === 'PINCH') cursorMesh.material.color.setHex(0x00ff00);
-            else if (gestureState === 'FIST') cursorMesh.material.color.setHex(0xff0000);
-            else cursorMesh.material.color.setHex(0x00ffff);
-
-            // Interaction
-            if (!isConfirmed) {
-                checkInteraction();
-                updateCardPhysics();
-            }
-
-            // Particles
-            updateParticles();
-
-            renderer.render(scene, camera);
-        }
-
-        function onWindowResize() {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        }
-
-        function onMouseMove(event) {
-            if (interactionMode !== 'MOUSE') return;
-            // Normalize mouse -1 to 1
-            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
-        }
-
-        // --- MediaPipe Hands Setup ---
-        const videoElement = document.getElementById('input_video');
-        const loading = document.getElementById('loading');
-
-        function onResults(results) {
-            loading.style.display = 'none';
-            if (interactionMode !== 'HAND') return;
-
-            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-                const landmarks = results.multiHandLandmarks[0];
-                
-                // 1. Position Mapping (Index Finger Tip #8)
-                // MediaPipe x is 0(left) to 1(right), y is 0(top) to 1(bottom)
-                // We flip X because selfie view
-                const x = (1 - landmarks[8].x) * 2 - 1; 
-                const y = -(landmarks[8].y) * 2 + 1;
-                
-                // Smoothly update global var
-                handCursorPos.set(x, y, 0);
-
-                // 2. Gesture Recognition
-                detectGesture(landmarks);
-            }
-        }
-
-        function distance(lm, i, j) {
-            const dx = lm[i].x - lm[j].x;
-            const dy = lm[i].y - lm[j].y;
-            const dz = lm[i].z - lm[j].z;
-            return Math.sqrt(dx*dx + dy*dy + dz*dz);
-        }
-
-        function detectGesture(lm) {
-            // Thumb Tip 4, Index Tip 8, Middle 12, Ring 16, Pinky 20
-            // PIP Joints: 6, 10, 14, 18
-            
-            const thumbTip = lm[4];
-            const indexTip = lm[8];
-            const pinchDist = distance(lm, 4, 8);
-
-            // Check if fingers are folded (Tip below PIP in y-axis? No, distance to palm base 0)
-            // Simplified: Distance tip to wrist(0) < PIP to wrist
-            const isFolded = (idx) => distance(lm, idx, 0) < distance(lm, idx-2, 0);
-
-            const middleFold = isFolded(12);
-            const ringFold = isFolded(16);
-            const pinkyFold = isFolded(20);
-            const indexFold = isFolded(8);
-
-            let newState = 'OPEN';
-
-            // FIST: All fingers folded (Index, Middle, Ring, Pinky)
-            if (indexFold && middleFold && ringFold && pinkyFold) {
-                newState = 'FIST';
-            }
-            // PINCH: Index close to thumb, others open or loose
-            else if (pinchDist < 0.05) {
-                newState = 'PINCH';
-            }
-            // POINT: Index open, others folded
-            else if (!indexFold && middleFold && ringFold && pinkyFold) {
-                newState = 'POINT'; // Not used heavily logic-wise, but good visual
-            }
-            
-            // State Change Logic
-            if (newState !== gestureState) {
-                // Debounce simple
-                gestureState = newState;
-                
-                // Trigger Logic
-                if (gestureState === 'PINCH') {
-                    // Start Grab handled in loop
-                } else if (gestureState === 'OPEN') {
-                    releaseCard();
-                } else if (gestureState === 'FIST') {
-                    confirmSelection();
-                }
-            }
-        }
-
-        // Initialize MediaPipe
-        const hands = new Hands({locateFile: (file) => {
-            return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
-        }});
+    // 4. 旋转相机模拟车辆倾斜 (Roll)
+    camera.rotation.z = -gameState.steerInput * 0.1; // 转向时镜头微倾
+    // 模拟车头抬起/点头 (Pitch) - 没加速时不管，这里简化
+    
+    // 5. 地面纹理滚动
+    if (roadMesh) {
+        roadMesh.material.map.offset.y = -gameState.distance * 0.02; 
+    }
+    
+    // 6. 移动路边物体 (制造相对运动)
+    roadsideObjects.forEach(obj => {
+        // 物体向相机移动 (Z轴增加)
+        obj.position.z += gameState.speed * 0.8; 
         
-        hands.setOptions({
-            maxNumHands: 1,
-            modelComplexity: 1,
-            minDetectionConfidence: 0.5,
-            minTrackingConfidence: 0.5
-        });
-        
-        hands.onResults(onResults);
-
-        // Webcam CamUtils
-        const cameraUtils = new Camera(videoElement, {
-            onFrame: async () => {
-                await hands.send({image: videoElement});
-            },
-            width: 320,
-            height: 240
-        });
-
-        // Start Logic
-        async function startApp() {
-            initThree();
-            
-            try {
-                await cameraUtils.start();
-            } catch(e) {
-                console.warn("Camera failed or denied, switching to mouse mode.", e);
-                setMouseMode();
-                loading.style.display = 'none';
-                alert("无法访问摄像头，已自动降级为鼠标模式。");
-            }
+        // 如果物体跑到相机后面了，重置到远方
+        if (obj.position.z > 10) {
+            resetObject(obj);
         }
+    });
 
-        // Mode Switching UI
-        const btnHand = document.getElementById('btn-hand');
-        const btnMouse = document.getElementById('btn-mouse');
+    // 7. 移动 Grid
+    if(gridMesh) {
+         gridMesh.position.z = -50 + (gameState.distance * 2) % 10;
+    }
+}
 
-        function setMouseMode() {
-            interactionMode = 'MOUSE';
-            btnHand.classList.remove('active');
-            btnMouse.classList.add('active');
-            videoElement.pause();
-            document.getElementById('webcam-container').style.opacity = 0.3;
-        }
+function updateUI() {
+    elSpeed.innerText = gameState.displaySpeed;
+    // 简单的颜色变化
+    if (gameState.displaySpeed > 200) elSpeed.style.color = '#ff0055';
+    else elSpeed.style.color = '#0ff';
 
-        function setHandMode() {
-            interactionMode = 'HAND';
-            btnMouse.classList.remove('active');
-            btnHand.classList.add('active');
-            videoElement.play();
-            document.getElementById('webcam-container').style.opacity = 1;
-        }
+    elSteer.innerText = gameState.steerInput.toFixed(2);
+}
 
-        btnMouse.addEventListener('click', setMouseMode);
-        btnHand.addEventListener('click', () => {
-            setHandMode();
-            // Re-trigger camera start if needed
-            cameraUtils.start().catch(e => {
-                alert("摄像头启动失败");
-                setMouseMode();
-            });
-        });
+function animate() {
+    requestAnimationFrame(animate);
 
-        startApp();
+    updateKeyboardSteer();
+    updatePhysics();
+    updateVisuals();
+    updateUI();
 
-    </script>
+    renderer.render(scene, camera);
+}
+
+/**
+ * ============================================================================
+ * 启动程序
+ * ============================================================================
+ */
+(function main() {
+    initThreeJS();
+    initMediaPipe();
+    animate();
+})();
+
+</script>
 </body>
 </html>
