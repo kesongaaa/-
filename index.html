@@ -3,462 +3,395 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 手势赛车 - 修复重制版</title>
+    <title>Three.js 手势控制赛车</title>
     <style>
-        body { 
-            margin: 0; 
-            overflow: hidden; 
-            background: linear-gradient(to bottom, #2b1055, #7597de); /* 夕阳渐变背景 */
-            font-family: 'Arial', sans-serif; 
-        }
-        #canvas-container { width: 100vw; height: 100vh; display: block; }
+        body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Arial', sans-serif; }
         
-        /* 摄像头画中画 */
-        #webcam-preview {
-            position: absolute;
-            top: 20px; right: 20px;
-            width: 200px; height: 150px;
-            background: #000;
-            border: 2px solid rgba(255,255,255,0.5);
-            border-radius: 10px;
-            transform: scaleX(-1);
-            z-index: 10;
-            object-fit: cover;
-        }
+        /* 游戏容器 */
+        #game-container { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 1; }
 
-        /* 仪表盘 */
+        /* UI 叠加层 */
         #ui-layer {
             position: absolute;
-            bottom: 40px; left: 40px;
-            color: white;
+            top: 20px;
+            left: 20px;
             z-index: 10;
-            font-style: italic;
+            color: #00ffcc;
+            text-shadow: 0 0 5px #000;
+            pointer-events: none;
         }
-        .speed-box { font-size: 60px; font-weight: 900; text-shadow: 0 0 10px #ff0055; }
-        .speed-unit { font-size: 20px; font-weight: normal; color: #ddd; }
-        .instruction { font-size: 16px; margin-bottom: 5px; color: #00ffcc; text-shadow: 0 1px 2px black;}
+        .stat-box {
+            background: rgba(0, 0, 0, 0.5);
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #00ffcc;
+            margin-bottom: 10px;
+        }
+        h1 { margin: 0 0 10px 0; font-size: 24px; }
+        p { margin: 5px 0; font-size: 18px; }
 
-        /* 加载遮罩 */
+        /* 摄像头调试窗口 */
+        #webcam-container {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            width: 240px;
+            height: 180px;
+            z-index: 10;
+            border: 2px solid #fff;
+            background: #000;
+            border-radius: 8px;
+            overflow: hidden;
+            transform: scaleX(-1); /* 镜像显示，符合直觉 */
+        }
+        #webcam-video { width: 100%; height: 100%; object-fit: cover; }
+        
+        /* 加载提示 */
         #loading {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: #111; z-index: 999;
-            display: flex; flex-direction: column;
-            justify-content: center; align-items: center;
-            color: white; transition: opacity 0.5s;
-        }
-        .bar-bg { width: 300px; height: 4px; background: #333; margin-top: 20px; border-radius: 2px;}
-        .bar-fill { width: 0%; height: 100%; background: #ff0055; transition: width 0.3s; }
-
-        /* 操控指示条 */
-        #steering-bar {
-            position: absolute; bottom: 120px; left: 50%;
-            transform: translateX(-50%);
-            width: 300px; height: 6px;
-            background: rgba(255,255,255,0.2);
-            border-radius: 3px;
-        }
-        #steering-dot {
-            position: absolute; left: 50%; top: -6px;
-            width: 18px; height: 18px;
-            background: #ff0055;
-            border-radius: 50%;
-            transform: translateX(-50%);
-            box-shadow: 0 0 10px #ff0055;
-            transition: left 0.1s ease-out;
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            color: white; font-size: 30px; z-index: 100; background: rgba(0,0,0,0.8);
+            padding: 20px; border-radius: 10px;
         }
     </style>
-    
-    <!-- 引入库 -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <!-- 引入 MediaPipe -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+    <!-- 引入 Three.js (通过 Import Map) -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
 </head>
 <body>
 
-    <div id="loading">
-        <h2>正在启动引擎...</h2>
-        <div class="bar-bg"><div class="bar-fill" id="progress"></div></div>
-        <p id="loading-text" style="margin-top:10px; color:#888;">请允许摄像头权限</p>
-    </div>
+    <!-- 加载提示 -->
+    <div id="loading">正在初始化引擎与AI...</div>
 
+    <!-- UI 显示 -->
     <div id="ui-layer">
-        <div class="instruction" id="status-msg">等待手势识别... (请举起单手)</div>
-        <div class="speed-box">0 <span class="speed-unit">KM/H</span></div>
+        <div class="stat-box">
+            <h1>手势赛车</h1>
+            <p>速度: <span id="speed-display">0</span> km/h</p>
+            <p>转向: <span id="steer-display">0</span>°</p>
+            <p style="font-size: 14px; color: #aaa;">提示：举起单手，左右倾斜控制方向</p>
+        </div>
     </div>
 
-    <div id="steering-bar"><div id="steering-dot"></div></div>
-    <video id="webcam-preview" playsinline></video>
-    <div id="canvas-container"></div>
+    <!-- 摄像头画面 -->
+    <div id="webcam-container">
+        <video id="webcam-video" playsinline></video>
+        <canvas id="webcam-canvas" style="position:absolute; top:0; left:0; width:100%; height:100%;"></canvas>
+    </div>
 
-<script>
-/**
- * 配置项
- */
-const CONFIG = {
-    roadWidth: 16,
-    speed: 0,
-    maxSpeed: 1.8,
-    turnSpeed: 0.08,  // 转向反应速度
-    cameraHeight: 3.5,
-    cameraDistance: 9
-};
+    <!-- 游戏画布 -->
+    <div id="game-container"></div>
 
-const STATE = {
-    u: 0, // 赛道进度 (0-1)
-    offset: 0, // 左右偏移 (-1 到 1)
-    targetOffset: 0, // 目标偏移 (手势控制)
-    handsReady: false
-};
+    <script type="module">
+        import * as THREE from 'three';
 
-// 资源引用
-let scene, camera, renderer;
-let carContainer, carBody, tailLights;
-let roadMesh, lineMesh;
-let curve;
+        // ==========================================
+        // 1. 全局变量与配置
+        // ==========================================
+        const CONFIG = {
+            maxSpeed: 2.0,          // 最大速度 (Three.js 单位/帧)
+            acceleration: 0.01,     // 加速度
+            friction: 0.98,         // 减速/摩擦力
+            turnSensitivity: 0.08,  // 转向灵敏度
+            maxSteerAngle: 0.8,     // 最大车轮转向角 (弧度)
+            cameraLag: 0.1          // 相机跟随延迟 (0-1)
+        };
 
-// 初始化入口
-function init() {
-    setupScene();
-    createRoad();
-    createCar();
-    createEnvironment();
-    
-    // 开始动画循环
-    animate();
-    
-    // 初始化AI
-    initAI();
-}
+        const STATE = {
+            speed: 0,
+            steering: 0,            // 当前转向值
+            targetSteering: 0,      // 目标转向值 (来自手势)
+            handDetected: false
+        };
 
-/**
- * 1. 场景与光照 (修复了太黑的问题)
- */
-function setupScene() {
-    const container = document.getElementById('canvas-container');
-    scene = new THREE.Scene();
-    
-    // 增加雾气，遮挡远处的断层，营造氛围
-    scene.fog = new THREE.FogExp2(0x4b2d5e, 0.008); // 紫色雾气配合背景
+        // DOM 元素
+        const speedEl = document.getElementById('speed-display');
+        const steerEl = document.getElementById('steer-display');
+        const loadingEl = document.getElementById('loading');
 
-    camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 500);
-    
-    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    container.appendChild(renderer.domElement);
+        // ==========================================
+        // 2. Three.js 场景构建
+        // ==========================================
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x87CEEB); // 天空蓝
+        scene.fog = new THREE.Fog(0x87CEEB, 20, 100); // 迷雾效果，遮挡远处加载
 
-    // 环境光 (整体亮度)
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
-    scene.add(ambientLight);
-
-    // 模拟夕阳的主光源
-    const sunLight = new THREE.DirectionalLight(0xffaa00, 1.2);
-    sunLight.position.set(-50, 60, -50);
-    sunLight.castShadow = true;
-    sunLight.shadow.mapSize.width = 1024;
-    sunLight.shadow.mapSize.height = 1024;
-    scene.add(sunLight);
-
-    // 补光 (照亮车尾)
-    const fillLight = new THREE.DirectionalLight(0x4444ff, 0.5);
-    fillLight.position.set(20, 10, 20);
-    scene.add(fillLight);
-    
-    window.addEventListener('resize', () => {
-        camera.aspect = window.innerWidth / window.innerHeight;
-        camera.updateProjectionMatrix();
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
-    });
-}
+        renderer.shadowMap.enabled = true;
+        document.getElementById('game-container').appendChild(renderer.domElement);
 
-/**
- * 2. 赛道生成 (修复了垂直墙壁的问题)
- */
-function createRoad() {
-    // 生成一条更平缓、宽阔的曲线
-    const points = [];
-    const segmentCount = 150;
-    
-    for (let i = 0; i <= segmentCount; i++) {
-        const angle = (i / segmentCount) * Math.PI * 2;
-        // 使用参数方程生成一个闭合的环形山路
-        const x = Math.sin(angle * 3) * 60 + Math.cos(angle * 5) * 20;
-        const z = Math.cos(angle * 3) * 80 + Math.sin(angle) * 40;
-        const y = Math.sin(angle * 6) * 15; // 起伏高度
+        // --- 灯光 ---
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        scene.add(ambientLight);
 
-        points.push(new THREE.Vector3(x, y, z));
-    }
-    
-    curve = new THREE.CatmullRomCurve3(points);
-    curve.closed = true; // 闭合赛道
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        dirLight.position.set(50, 100, 50);
+        dirLight.castShadow = true;
+        scene.add(dirLight);
 
-    // 路面几何体
-    const roadGeo = new THREE.TubeGeometry(curve, 300, CONFIG.roadWidth / 2, 6, true);
-    
-    // 材质：深色沥青
-    const roadMat = new THREE.MeshStandardMaterial({ 
-        color: 0x222222, 
-        roughness: 0.8,
-        metalness: 0.1,
-        side: THREE.DoubleSide
-    });
-    
-    roadMesh = new THREE.Mesh(roadGeo, roadMat);
-    roadMesh.receiveShadow = true;
-    scene.add(roadMesh);
-    
-    // 添加车道线 (关键：这给了速度感)
-    // 简单的做法是再生成一个细的Tube浮在路面上
-    const lineGeo = new THREE.TubeGeometry(curve, 300, 0.2, 3, true);
-    const lineMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-    lineMesh = new THREE.Mesh(lineGeo, lineMat);
-    lineMesh.position.y = 0.1; // 稍微抬高防止Z-fighting
-    // 注意：这里简单的Tube无法完美贴合扭曲路面的法线，
-    // 但因为我们用了双面渲染且路面较宽，视觉上在中间看起来像分道线。
-    scene.add(lineMesh);
-}
-
-/**
- * 3. 车量模型 (修复了模型太黑、看不清的问题)
- */
-function createCar() {
-    carContainer = new THREE.Group();
-    
-    // 3.1 车身
-    const bodyGeo = new THREE.BoxGeometry(2, 0.8, 4.2);
-    // 使用 MeshPhysicalMaterial 获得更好的金属质感
-    const bodyMat = new THREE.MeshPhysicalMaterial({ 
-        color: 0x050505, // 接近黑色
-        clearcoat: 1.0, 
-        clearcoatRoughness: 0.1,
-        metalness: 0.6,
-        roughness: 0.4
-    });
-    carBody = new THREE.Mesh(bodyGeo, bodyMat);
-    carBody.position.y = 0.6;
-    carBody.castShadow = true;
-    carContainer.add(carBody);
-    
-    // 3.2 车顶
-    const roofGeo = new THREE.BoxGeometry(1.7, 0.5, 2.0);
-    const roof = new THREE.Mesh(roofGeo, bodyMat);
-    roof.position.set(0, 1.25, -0.3);
-    carContainer.add(roof);
-
-    // 3.3 标志性的贯穿尾灯 (发光)
-    const tailGeo = new THREE.BoxGeometry(1.9, 0.1, 0.1);
-    const tailMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
-    tailLights = new THREE.Mesh(tailGeo, tailMat);
-    tailLights.position.set(0, 0.8, 2.12);
-    carContainer.add(tailLights);
-
-    // 尾灯光晕 (点光源)
-    const tailLightSrc = new THREE.PointLight(0xff0000, 1, 15);
-    tailLightSrc.position.set(0, 0.8, 2.5);
-    carContainer.add(tailLightSrc);
-
-    // 3.4 扰流板
-    const wingGeo = new THREE.BoxGeometry(2.2, 0.05, 0.6);
-    const wing = new THREE.Mesh(wingGeo, bodyMat);
-    wing.position.set(0, 1.1, 2.0);
-    carContainer.add(wing);
-
-    scene.add(carContainer);
-}
-
-/**
- * 4. 环境装饰 (低多边形山脉)
- */
-function createEnvironment() {
-    // 在远处随机生成一些金字塔作为山
-    const mGroup = new THREE.Group();
-    const material = new THREE.MeshStandardMaterial({ 
-        color: 0x1a0b2e, 
-        roughness: 1, 
-        flatShading: true 
-    });
-    
-    for(let i=0; i<40; i++) {
-        const h = 20 + Math.random() * 50;
-        const geo = new THREE.ConeGeometry(h/2, h, 4);
-        const mesh = new THREE.Mesh(geo, material);
+        // --- 赛车 (简单的组合几何体) ---
+        const carGroup = new THREE.Group();
         
-        // 随机分布在场景周围
-        const r = 80 + Math.random() * 100;
-        const theta = Math.random() * Math.PI * 2;
+        // 车身
+        const bodyGeo = new THREE.BoxGeometry(2, 1, 4);
+        const bodyMat = new THREE.MeshStandardMaterial({ color: 0xff0033, roughness: 0.3 });
+        const carBody = new THREE.Mesh(bodyGeo, bodyMat);
+        carBody.position.y = 0.75;
+        carBody.castShadow = true;
+        carGroup.add(carBody);
+
+        // 车顶
+        const topGeo = new THREE.BoxGeometry(1.8, 0.6, 2);
+        const topMat = new THREE.MeshStandardMaterial({ color: 0x333333 });
+        const carTop = new THREE.Mesh(topGeo, topMat);
+        carTop.position.y = 1.5;
+        carTop.position.z = -0.5;
+        carTop.castShadow = true;
+        carGroup.add(carTop);
+
+        // 车轮函数
+        function createWheel(x, z) {
+            const wheelGeo = new THREE.CylinderGeometry(0.5, 0.5, 0.4, 16);
+            const wheelMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
+            const wheel = new THREE.Mesh(wheelGeo, wheelMat);
+            wheel.rotation.z = Math.PI / 2;
+            wheel.position.set(x, 0.5, z);
+            wheel.castShadow = true;
+            return wheel;
+        }
         
-        mesh.position.x = Math.sin(theta) * r;
-        mesh.position.z = Math.cos(theta) * r;
-        mesh.position.y = h/2 - 20; // 沉入地下一点
+        carGroup.add(createWheel(1.1, 1.2));  // 前右
+        carGroup.add(createWheel(-1.1, 1.2)); // 前左
+        carGroup.add(createWheel(1.1, -1.2)); // 后右
+        carGroup.add(createWheel(-1.1, -1.2)); // 后左
+
+        scene.add(carGroup);
+
+        // --- 地面与环境 ---
+        // 使用一个无限滚动的地面纹理逻辑：地面跟随车走，但纹理偏移
+        const planeGeo = new THREE.PlaneGeometry(200, 200);
+        const gridHelper = new THREE.GridHelper(200, 100, 0xffffff, 0x555555);
         
-        mGroup.add(mesh);
-    }
-    scene.add(mGroup);
-}
+        // 创建一个看起来像地面的 Mesh
+        const groundMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
+        const ground = new THREE.Mesh(planeGeo, groundMat);
+        ground.rotation.x = -Math.PI / 2;
+        ground.receiveShadow = true;
+        scene.add(ground);
+        scene.add(gridHelper); // 网格线辅助视觉速度感
 
-/**
- * 5. 核心逻辑：物理移动与摄像机
- */
-function updatePhysics() {
-    // 简单的加减速
-    if (STATE.handsReady) {
-        CONFIG.speed += 0.01;
-    } else {
-        CONFIG.speed *= 0.95; // 没人操作就减速
-    }
-    CONFIG.speed = Math.min(Math.max(CONFIG.speed, 0), CONFIG.maxSpeed);
-
-    // 1. 沿路径移动
-    // speed 转换成 u 的增量 (u 是 0~1)
-    const speedFactor = 0.00015 * CONFIG.speed;
-    STATE.u += speedFactor;
-    if (STATE.u > 1) STATE.u = 0;
-
-    // 2. 获取当前路径上的点和切线
-    const pointOnCurve = curve.getPointAt(STATE.u);
-    const tangent = curve.getTangentAt(STATE.u).normalize();
-    
-    // 3. 计算左右偏移 (Lerp 平滑)
-    // 手势输入 STATE.targetOffset 范围是 -1 ~ 1
-    // 我们让 STATE.offset 慢慢接近 targetOffset
-    STATE.offset += (STATE.targetOffset - STATE.offset) * CONFIG.turnSpeed;
-    
-    // 计算法线 (Right Vector)
-    const up = new THREE.Vector3(0, 1, 0);
-    // 右向量 = 切线 叉乘 上向量
-    const right = new THREE.Vector3().crossVectors(tangent, up).normalize();
-    
-    // 4. 定位车身
-    // 实际位置 = 曲线点 + 右向量 * 偏移量 * 路宽一半
-    const finalPos = pointOnCurve.clone().add(right.multiplyScalar(-STATE.offset * (CONFIG.roadWidth/2 - 2)));
-    
-    carContainer.position.copy(finalPos);
-    
-    // 5. 旋转车身
-    // 让车头朝向切线方向
-    // 为了防止 LookAt 翻转，我们看前方一点点
-    const lookTarget = curve.getPointAt((STATE.u + 0.01) % 1);
-    // 加上偏移量修正 LookTarget，否则车会斜着走
-    const nextTangent = curve.getTangentAt((STATE.u + 0.01) % 1).normalize();
-    const nextRight = new THREE.Vector3().crossVectors(nextTangent, up).normalize();
-    const finalLookTarget = lookTarget.clone().add(nextRight.multiplyScalar(-STATE.offset * (CONFIG.roadWidth/2 - 2)));
-
-    carContainer.lookAt(finalLookTarget);
-    
-    // 增加视觉倾斜 (模拟悬挂)
-    // 转向时，车身向反方向倾斜 (Roll)
-    const roll = STATE.offset * 0.3; // 持续的侧倾
-    carContainer.rotation.z += (STATE.targetOffset - STATE.offset) * 0.5; // 转向瞬间的侧倾
-
-    // 6. 摄像机跟随 (关键修复点)
-    // 摄像机位置 = 车位置 - 切线方向*距离 + 向上*高度
-    // 这种算法最稳，不会穿模
-    const camPos = carContainer.position.clone()
-        .sub(tangent.clone().multiplyScalar(CONFIG.cameraDistance))
-        .add(new THREE.Vector3(0, CONFIG.cameraHeight, 0));
-        
-    // 摄像机平滑插值
-    camera.position.lerp(camPos, 0.1);
-    
-    // 摄像机看向车前方一点，增加动态感
-    const camLookAt = carContainer.position.clone().add(tangent.clone().multiplyScalar(10));
-    camera.lookAt(camLookAt);
-
-    // 7. 更新 UI
-    document.querySelector('.speed-box').innerHTML = Math.floor(CONFIG.speed * 120) + ' <span class="speed-unit">KM/H</span>';
-}
-
-function animate() {
-    requestAnimationFrame(animate);
-    updatePhysics();
-    renderer.render(scene, camera);
-}
-
-/**
- * 6. MediaPipe AI 手势识别
- */
-function initAI() {
-    const videoEl = document.getElementById('webcam-preview');
-    const statusEl = document.getElementById('status-msg');
-    const loadingEl = document.getElementById('loading');
-    const progressEl = document.getElementById('progress');
-    const steeringDot = document.getElementById('steering-dot');
-
-    const hands = new Hands({locateFile: (file) => {
-        return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
-    }});
-
-    hands.setOptions({
-        maxNumHands: 1,
-        modelComplexity: 1,
-        minDetectionConfidence: 0.5,
-        minTrackingConfidence: 0.5
-    });
-
-    hands.onResults(results => {
-        // 隐藏Loading
-        loadingEl.style.opacity = 0;
-        setTimeout(()=>loadingEl.style.display='none', 500);
-
-        if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-            STATE.handsReady = true;
-            statusEl.innerText = "识别成功：左右摆动手掌转向";
-            statusEl.style.color = "#00ff88";
-
-            const lm = results.multiHandLandmarks[0];
-            // 计算手掌重心和指尖的相对位置
-            // 简单算法：比较手腕(0)和中指指尖(12)的X坐标
-            const wrist = lm[0];
-            const middleTip = lm[12];
-            
-            // 计算倾斜差值
-            const diffX = middleTip.x - wrist.x;
-            
-            // 放大灵敏度 (通常diffX在 -0.2 到 0.2 之间)
-            let steer = diffX * 4.0;
-            // 限制在 -1 到 1
-            steer = Math.max(-1, Math.min(1, steer));
-            
-            // 镜像修正 (如果觉得反了，去掉这里的负号)
-            // 视频是镜像的，如果你向左歪头，屏幕上是向右。
-            // 这里的逻辑：手向左倾斜(屏幕左边) -> 车左转
-            STATE.targetOffset = steer;
-
-        } else {
-            STATE.handsReady = false;
-            statusEl.innerText = "未检测到手部 - 请在摄像头前举起单手";
-            statusEl.style.color = "#ff4444";
-            // 自动回正
-            STATE.targetOffset = 0;
+        // 装饰物（简单的树/石头，用来参照速度）
+        const obstacles = [];
+        for(let i=0; i<30; i++) {
+            const geo = new THREE.ConeGeometry(1, 4, 8);
+            const mat = new THREE.MeshStandardMaterial({ color: 0x228b22 });
+            const tree = new THREE.Mesh(geo, mat);
+            resetObstacle(tree, true); // 随机位置
+            scene.add(tree);
+            obstacles.push(tree);
         }
 
-        // 更新下方 UI 指示条
-        const leftPerc = 50 + (STATE.targetOffset * 50);
-        steeringDot.style.left = leftPerc + '%';
-    });
+        function resetObstacle(obj, randomZ = false) {
+            obj.position.x = (Math.random() - 0.5) * 80; // 宽范围
+            // 确保不撞车
+            if (Math.abs(obj.position.x) < 5) obj.position.x += 10;
+            
+            // 如果是随机Z（初始化时），否则放置在远处
+            if (randomZ) {
+                obj.position.z = carGroup.position.z - Math.random() * 100 + 50;
+            } else {
+                obj.position.z = carGroup.position.z - 100 - Math.random() * 20;
+            }
+            obj.position.y = 2;
+        }
 
-    const cameraInput = new Camera(videoEl, {
-        onFrame: async () => {
-            await hands.send({image: videoEl});
-        },
-        width: 320,
-        height: 240
-    });
+        // ==========================================
+        // 3. MediaPipe 手势识别逻辑
+        // ==========================================
+        const videoElement = document.getElementById('webcam-video');
+        const canvasElement = document.getElementById('webcam-canvas');
+        const canvasCtx = canvasElement.getContext('2d');
 
-    // 模拟进度条
-    progressEl.style.width = "50%";
-    
-    cameraInput.start().then(()=>{
-        progressEl.style.width = "100%";
-    });
-}
+        function onResults(results) {
+            // 清除调试画布
+            canvasCtx.save();
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+            canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
 
-// 启动
-window.onload = init;
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                STATE.handDetected = true;
+                const landmarks = results.multiHandLandmarks[0];
+                
+                // 绘制骨架
+                drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {color: '#00FF00', lineWidth: 2});
+                drawLandmarks(canvasCtx, landmarks, {color: '#FF0000', lineWidth: 1, radius: 3});
 
-</script>
+                // --- 核心算法：计算手掌旋转角度 ---
+                // 使用手腕(0)和中指指根(9)作为向量
+                const wrist = landmarks[0];
+                const middleFinger = landmarks[9];
+
+                // 计算 X 轴偏差
+                // 注意：在 MediaPipe 中，x 坐标 0 在左，1 在右。
+                // 如果我们像握方向盘一样举手：
+                // 手向左倒 -> 中指x < 手腕x
+                // 手向右倒 -> 中指x > 手腕x
+                const dx = middleFinger.x - wrist.x;
+                
+                // 将 dx (-0.3 到 0.3) 映射到 转向角度
+                // 增加灵敏度乘数
+                let steerInput = dx * 5.0; 
+                
+                // 限制幅度
+                steerInput = Math.max(-1, Math.min(1, steerInput));
+
+                // 镜像修正：因为摄像头通常是镜像的，而我们这里使用了 scaleX(-1) CSS 显示视频。
+                // 但在逻辑中，为了符合直觉（手向右倒车向右转），如果发现方向反了，在这里取反。
+                // 测试结果通常：手向屏幕右侧倒 (dx > 0) -> 车应右转 (Rotation Y < 0 或 > 0 取决于坐标系)
+                // Three.js: 旋转 Y 正是逆时针(左)，负是顺时针(右)。
+                STATE.targetSteering = -steerInput * CONFIG.maxSteerAngle;
+
+            } else {
+                STATE.handDetected = false;
+                STATE.targetSteering = 0; // 没手时回正
+            }
+            canvasCtx.restore();
+        }
+
+        const hands = new Hands({locateFile: (file) => {
+            return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+        }});
+
+        hands.setOptions({
+            maxNumHands: 1,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+        });
+
+        hands.onResults(onResults);
+
+        const cameraUtils = new Camera(videoElement, {
+            onFrame: async () => {
+                await hands.send({image: videoElement});
+            },
+            width: 320,
+            height: 240
+        });
+
+        // 启动摄像头
+        cameraUtils.start()
+            .then(() => {
+                loadingEl.style.display = 'none';
+                console.log("摄像头已启动");
+            })
+            .catch(err => {
+                loadingEl.innerHTML = "无法访问摄像头，请检查权限。";
+                console.error(err);
+            });
+
+        // ==========================================
+        // 4. 游戏主循环
+        // ==========================================
+        
+        // 调整大小
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // 相机偏移量
+        const cameraOffset = new THREE.Vector3(0, 5, 10);
+
+        function updatePhysics() {
+            // 1. 速度控制
+            // 如果检测到手，并且速度未达上限，则加速
+            if (STATE.handDetected && STATE.speed < CONFIG.maxSpeed) {
+                STATE.speed += CONFIG.acceleration;
+            } else if (!STATE.handDetected && STATE.speed > 0) {
+                // 没手时慢慢减速
+                STATE.speed *= CONFIG.friction;
+            }
+            // 简单的转弯减速
+            if(Math.abs(STATE.steering) > 0.3) {
+                STATE.speed *= 0.99; 
+            }
+
+            // 2. 转向平滑插值 (Damping)
+            STATE.steering += (STATE.targetSteering - STATE.steering) * CONFIG.turnSensitivity;
+
+            // 3. 应用移动
+            // 赛车当前的旋转角度
+            carGroup.rotation.y = STATE.steering;
+
+            // 计算移动向量：Z轴负方向是向前
+            // 赛车不仅要旋转模型，还要改变移动方向向量
+            // 简单的做法：位置沿着当前朝向移动
+            const speedX = Math.sin(carGroup.rotation.y) * STATE.speed;
+            const speedZ = Math.cos(carGroup.rotation.y) * STATE.speed;
+
+            carGroup.position.x -= speedX; // 注意正负号调整方向
+            carGroup.position.z -= speedZ;
+
+            // 限制 X 轴边界（防止跑太远）
+            if(carGroup.position.x > 80) carGroup.position.x = 80;
+            if(carGroup.position.x < -80) carGroup.position.x = -80;
+
+            // 4. 环境循环 (Infinite Runner Logic)
+            // 地面跟随
+            ground.position.z = carGroup.position.z;
+            gridHelper.position.z = carGroup.position.z;
+            // 纹理偏移没做，直接让grid跟着走，视觉上需要参照物
+            
+            // 检查障碍物，如果跑到了摄像机后面，就重置到前方
+            obstacles.forEach(obj => {
+                if (obj.position.z > carGroup.position.z + 20) {
+                    resetObstacle(obj);
+                }
+            });
+
+            // 5. 更新 UI
+            speedEl.innerText = Math.floor(STATE.speed * 100); // 假装是 km/h
+            steerEl.innerText = Math.floor(THREE.MathUtils.radToDeg(-STATE.steering)); // 显示角度
+        }
+
+        function updateCamera() {
+            // 目标相机位置：车的位置 + 旋转后的偏移
+            // 简单版本：相机永远在车屁股后面，不随车身旋转而剧烈旋转，只跟随位置
+            const targetPos = carGroup.position.clone().add(cameraOffset);
+            
+            // 为了增加动感，让相机稍微偏向转向的反方向（可选，这里只做位置跟随）
+            camera.position.lerp(targetPos, CONFIG.cameraLag);
+            camera.lookAt(carGroup.position);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            updatePhysics();
+            updateCamera();
+            
+            renderer.render(scene, camera);
+        }
+
+        // 开始渲染循环
+        animate();
+
+    </script>
 </body>
 </html>
