@@ -1,470 +1,659 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>WebGL Hand Gesture Racer - Obstacle Mode</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mystic Tarot Experience</title>
     <style>
-        /* 页面基础样式 - 赛博朋克风格 */
-        body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Segoe UI', sans-serif; }
-        
-        #canvas-container { width: 100vw; height: 100vh; display: block; }
-
-        /* UI 层 */
-        #ui-layer {
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;
-            display: flex; flex-direction: column; justify-content: space-between;
+        body { margin: 0; overflow: hidden; background-color: #050505; font-family: 'Courier New', Courier, monospace; }
+        canvas { display: block; }
+        #loading {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            color: #d4af37; font-size: 24px; letter-spacing: 4px; pointer-events: none;
+            text-shadow: 0 0 10px #d4af37; transition: opacity 1s;
         }
-
-        /* 碰撞时的红屏闪烁效果 */
-        #damage-overlay {
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            background: radial-gradient(circle, transparent 50%, red 100%);
-            opacity: 0; transition: opacity 0.1s; pointer-events: none; z-index: 5;
+        #video-feed {
+            position: absolute; bottom: 10px; right: 10px; width: 160px; height: 120px;
+            transform: scaleX(-1); opacity: 0.3; border-radius: 8px; border: 1px solid #333;
+            z-index: 100; pointer-events: none; display: none; /* Hidden by default, enable if debug needed */
         }
-
-        /* 顶部仪表盘 */
-        .hud-top {
-            padding: 20px;
-            display: flex; justify-content: space-between; align-items: flex-start;
-            background: linear-gradient(to bottom, rgba(0,0,0,0.8), transparent);
+        #guide {
+            position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
+            color: rgba(255, 255, 255, 0.5); text-align: center; font-size: 14px; pointer-events: none;
+            text-shadow: 0 0 5px rgba(0,0,0,0.8);
         }
-
-        .speed-box { text-align: right; color: #0ff; text-shadow: 0 0 10px #0ff; }
-        .speed-value { font-size: 60px; font-weight: bold; font-family: 'Courier New', monospace; }
-        .speed-unit { font-size: 20px; opacity: 0.8; }
-
-        .status-box { color: #fff; font-size: 14px; background: rgba(0, 50, 100, 0.5); padding: 10px; border-radius: 8px; border: 1px solid #0ff; backdrop-filter: blur(4px); }
-        .status-item { margin-bottom: 5px; display: flex; align-items: center; }
-        .dot { width: 10px; height: 10px; border-radius: 50%; background: #333; margin-right: 8px; display: inline-block; }
-        .dot.active { background: #0f0; box-shadow: 0 0 8px #0f0; }
-        .dot.error { background: #f00; }
-
-        /* 摄像头小窗口 */
-        #webcam-preview {
-            position: absolute; bottom: 20px; right: 20px;
-            width: 160px; height: 120px;
-            border: 2px solid #333; background: #000;
-            transform: scaleX(-1); /* 镜像 */
-            z-index: 10; opacity: 0.7;
-            border-radius: 8px;
-        }
-
-        /* 加载遮罩 */
-        #loader {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: #000; z-index: 999;
-            display: flex; flex-direction: column; justify-content: center; align-items: center;
-            color: #0ff; transition: opacity 0.5s;
-        }
-        .spinner {
-            width: 50px; height: 50px; border: 5px solid #333; border-top: 5px solid #0ff;
-            border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 20px;
-        }
-        @keyframes spin { 100% { transform: rotate(360deg); } }
     </style>
-
-    <!-- 引入 MediaPipe -->
+    <!-- Three.js & Plugins -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
+    <script src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+    <script src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
+    <script src="https://unpkg.com/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
+    <script src="https://unpkg.com/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
+    <script src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+    <!-- GSAP for Animation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    <!-- MediaPipe Hands -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
-
-    <!-- 引入 Three.js -->
-    <script type="importmap">
-        {
-            "imports": {
-                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
-            }
-        }
-    </script>
 </head>
 <body>
 
-    <div id="loader">
-        <div class="spinner"></div>
-        <div>LOADING SYSTEM...</div>
-        <div style="font-size:12px; color:#666; margin-top:10px">请允许摄像头权限</div>
+    <div id="loading">INITIALIZING THE VOID...</div>
+    <video id="video-feed" playsinline></video>
+    <div id="guide">
+        👋 挥手滑动 &nbsp;|&nbsp; ☝️ 食指选择 &nbsp;|&nbsp; 👌 捏合抽取 &nbsp;|&nbsp; 🖐 张开消散
     </div>
 
-    <!-- 伤害闪烁层 -->
-    <div id="damage-overlay"></div>
+<script>
+/**
+ * 配置与全局状态
+ */
+const CONFIG = {
+    cardCount: 22, // 大阿卡纳
+    cardGap: 1.8,  // 牌间距
+    camZ: 12,      // 相机距离
+    bloomStrength: 1.2,
+    bloomRadius: 0.5,
+    bloomThreshold: 0.1,
+    scrollFriction: 0.95, // 滚动阻尼
+    hoverLift: 0.8,       // 悬停上浮高度
+    particlesCount: 2000
+};
 
-    <div id="canvas-container"></div>
-    <video id="webcam-preview" playsinline muted></video>
+const STATE = {
+    scrollX: 0,        // 当前滚动位置
+    targetScrollX: 0,  // 目标滚动位置（物理）
+    velocity: 0,       // 滚动速度
+    handX: 0,          // 归一化手部X坐标 (-1 to 1)
+    handY: 0,          // 归一化手部Y坐标 (-1 to 1)
+    isHandPresent: false,
+    gesture: 'NONE',   // NONE, WAVE, HOVER, PINCH, OPEN
+    hoverIndex: -1,    // 当前被指的牌索引
+    selectedIndex: -1, // 被抽出的牌索引
+    mode: 'BROWSING',  // BROWSING, DRAWING, VIEWING, DISSOLVING
+    lastHandX: 0,
+    pinchDist: 0
+};
 
-    <div id="ui-layer">
-        <div class="hud-top">
-            <div class="status-box">
-                <div class="status-item"><span class="dot" id="cam-dot"></span> 摄像头信号</div>
-                <div class="status-item"><span class="dot" id="hand-dot"></span> 手势识别</div>
-                <div style="font-size:12px; color:#aaa; margin-top:5px;">
-                    单手左右倾斜 = 转向<br>
-                    <span style="color:#ff3333">注意避开红色障碍物！</span>
-                </div>
-            </div>
-            <div class="speed-box">
-                <div class="speed-value" id="speed-display">0</div>
-                <div class="speed-unit">KM/H</div>
-            </div>
-        </div>
-    </div>
+// 塔罗牌名称
+const TAROT_NAMES = [
+    "The Fool", "The Magician", "The High Priestess", "The Empress", "The Emperor", 
+    "The Hierophant", "The Lovers", "The Chariot", "Strength", "The Hermit", 
+    "Wheel of Fortune", "Justice", "The Hanged Man", "Death", "Temperance", 
+    "The Devil", "The Tower", "The Star", "The Moon", "The Sun", "Judgement", "The World"
+];
 
-    <script type="module">
-        import * as THREE from 'three';
+// ------------------------------------------------------------------
+// 1. 资源生成 (Canvas Textures) - 避免外部依赖
+// ------------------------------------------------------------------
 
-        // =========================================
-        // 1. 全局配置
-        // =========================================
-        const CONFIG = {
-            maxSpeed: 280,        
-            acceleration: 0.6,    
-            steeringSensitivity: 0.08, 
-            roadWidth: 50,
-            cameraHeight: 2.0
-        };
+function createCardBackTexture() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512; canvas.height = 800;
+    const ctx = canvas.getContext('2d');
+    
+    // 背景深色
+    ctx.fillStyle = '#110a1a'; 
+    ctx.fillRect(0,0,512,800);
+    
+    // 金色边框
+    ctx.strokeStyle = '#cba135';
+    ctx.lineWidth = 15;
+    ctx.strokeRect(20,20,472,760);
+    
+    // 神秘图案 (简单的几何图案)
+    ctx.beginPath();
+    ctx.arc(256, 400, 100, 0, Math.PI*2);
+    ctx.lineWidth = 5;
+    ctx.stroke();
+    
+    ctx.beginPath();
+    ctx.moveTo(256, 200); ctx.lineTo(256, 600);
+    ctx.moveTo(156, 400); ctx.lineTo(356, 400);
+    ctx.stroke();
 
-        const STATE = {
-            speed: 0,
-            steering: 0,
-            targetSteering: 0,
-            controlMode: 'keyboard',
-            isHit: false // 是否发生碰撞
-        };
+    // 噪点纹理
+    for(let i=0; i<5000; i++) {
+        ctx.fillStyle = `rgba(255,255,255,${Math.random()*0.1})`;
+        ctx.fillRect(Math.random()*512, Math.random()*800, 2, 2);
+    }
+    
+    const tex = new THREE.CanvasTexture(canvas);
+    return tex;
+}
 
-        const UI = {
-            loader: document.getElementById('loader'),
-            speed: document.getElementById('speed-display'),
-            camDot: document.getElementById('cam-dot'),
-            handDot: document.getElementById('hand-dot'),
-            video: document.getElementById('webcam-preview'),
-            damage: document.getElementById('damage-overlay')
-        };
+function createCardFrontTexture(index) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512; canvas.height = 800;
+    const ctx = canvas.getContext('2d');
+    
+    // 羊皮纸背景
+    ctx.fillStyle = '#eaddcf'; 
+    ctx.fillRect(0,0,512,800);
+    
+    // 内部边框
+    ctx.strokeStyle = '#4a3b2a';
+    ctx.lineWidth = 10;
+    ctx.strokeRect(30,30,452,740);
 
-        // =========================================
-        // 2. Three.js 场景
-        // =========================================
-        const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x020008);
-        scene.fog = new THREE.FogExp2(0x020008, 0.01); // 增加雾浓度，隐藏生成过程
+    // 文字
+    ctx.fillStyle = '#222';
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 40px Courier New';
+    
+    // 罗马数字
+    const roman = ["0", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII", "XIII", "XIV", "XV", "XVI", "XVII", "XVIII", "XIX", "XX", "XXI"];
+    ctx.fillText(roman[index], 256, 100);
 
-        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 500);
-        camera.position.set(0, CONFIG.cameraHeight, 5);
-        camera.lookAt(0, CONFIG.cameraHeight, -20);
+    // 名称
+    ctx.font = 'bold 36px Times New Roman';
+    const name = TAROT_NAMES[index].toUpperCase();
+    // 简单的自动换行处理
+    const words = name.split(' ');
+    let y = 600;
+    words.forEach(word => {
+        ctx.fillText(word, 256, y);
+        y += 50;
+    });
 
-        const renderer = new THREE.WebGLRenderer({ antialias: true });
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-        document.getElementById('canvas-container').appendChild(renderer.domElement);
+    // 中心图形占位 (一个黑色的圆)
+    ctx.fillStyle = '#111';
+    ctx.beginPath();
+    ctx.arc(256, 350, 120, 0, Math.PI*2);
+    ctx.fill();
+    
+    // 编号
+    ctx.fillStyle = '#d4af37';
+    ctx.font = '100px serif';
+    ctx.fillText(index, 256, 385);
 
-        // 灯光
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
-        scene.add(ambientLight);
-        // 主光源
-        const dirLight = new THREE.DirectionalLight(0x00f3ff, 1);
-        dirLight.position.set(20, 50, 20);
-        scene.add(dirLight);
-        // 红色警示光（照亮障碍物）
-        const redLight = new THREE.PointLight(0xff0000, 0.5, 50);
-        redLight.position.set(0, 5, -10);
-        scene.add(redLight);
+    const tex = new THREE.CanvasTexture(canvas);
+    return tex;
+}
 
-        // --- 1. 道路 (网格地面) ---
-        function createGridTexture() {
-            const canvas = document.createElement('canvas');
-            canvas.width = 512; canvas.height = 512;
-            const ctx = canvas.getContext('2d');
-            
-            // 黑底
-            ctx.fillStyle = '#050505';
-            ctx.fillRect(0,0,512,512);
-            
-            // 亮青色边线
-            ctx.strokeStyle = '#00f3ff';
-            ctx.lineWidth = 6;
-            ctx.beginPath();
-            ctx.moveTo(0, 0); ctx.lineTo(0, 512);
-            ctx.moveTo(512, 0); ctx.lineTo(512, 512);
-            ctx.stroke();
+function createParticleTexture() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 32; canvas.height = 32;
+    const ctx = canvas.getContext('2d');
+    const grad = ctx.createRadialGradient(16,16,0,16,16,16);
+    grad.addColorStop(0, 'rgba(255, 230, 150, 1)');
+    grad.addColorStop(1, 'rgba(255, 230, 150, 0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0,0,32,32);
+    return new THREE.CanvasTexture(canvas);
+}
 
-            // 横向速度线
-            ctx.strokeStyle = 'rgba(0, 243, 255, 0.2)';
-            ctx.lineWidth = 2;
-            for(let i=0; i<512; i+=64) {
-                ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(512, i); ctx.stroke();
-            }
-            
-            const tex = new THREE.CanvasTexture(canvas);
-            tex.wrapS = THREE.RepeatWrapping;
-            tex.wrapT = THREE.RepeatWrapping;
-            tex.anisotropy = 16;
-            return tex;
-        }
+// ------------------------------------------------------------------
+// 2. Three.js 场景搭建
+// ------------------------------------------------------------------
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x050505);
+scene.fog = new THREE.FogExp2(0x050505, 0.04);
 
-        const roadTexture = createGridTexture();
-        const roadGeo = new THREE.PlaneGeometry(CONFIG.roadWidth, 1000);
-        const roadMat = new THREE.MeshBasicMaterial({ map: roadTexture });
-        const road = new THREE.Mesh(roadGeo, roadMat);
-        road.rotation.x = -Math.PI / 2;
-        scene.add(road);
+const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+camera.position.set(0, 1, CONFIG.camZ);
 
-        // --- 2. 路边建筑 (装饰) ---
-        const buildings = [];
-        const buildGeo = new THREE.BoxGeometry(2, 1, 2);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.toneMapping = THREE.ReinhardToneMapping;
+document.body.appendChild(renderer.domElement);
+
+// 灯光
+const ambientLight = new THREE.AmbientLight(0x404040, 0.5);
+scene.add(ambientLight);
+
+const spotLight = new THREE.SpotLight(0xffffff, 1.5);
+spotLight.position.set(0, 10, 10);
+spotLight.angle = 0.5;
+spotLight.penumbra = 0.5;
+spotLight.castShadow = true;
+scene.add(spotLight);
+
+// 重点：卡牌组
+const deckGroup = new THREE.Group();
+scene.add(deckGroup);
+
+const cardGeometry = new THREE.BoxGeometry(1.4, 2.4, 0.05);
+const backMat = new THREE.MeshStandardMaterial({ 
+    map: createCardBackTexture(),
+    roughness: 0.4,
+    metalness: 0.3
+});
+const sideMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
+
+const cards = [];
+
+for (let i = 0; i < CONFIG.cardCount; i++) {
+    // 材质数组：右左上下前后
+    const frontMat = new THREE.MeshStandardMaterial({ 
+        map: createCardFrontTexture(i),
+        roughness: 0.6
+    });
+    
+    // 注意：BoxGeometry 材质顺序是 right, left, top, bottom, front, back
+    // 这里我们假设 front 面是 index 4, back 是 index 5
+    // 但为了翻牌方便，我们统一背面朝向Z+ (默认)，正面朝向Z-
+    // 或者我们做双面材质，这里简单处理：Z+ 是背面，Z- 是正面
+    
+    const materials = [sideMat, sideMat, sideMat, sideMat, frontMat, backMat];
+    
+    const card = new THREE.Mesh(cardGeometry, materials);
+    // 初始位置
+    card.position.x = (i - CONFIG.cardCount / 2) * CONFIG.cardGap;
+    card.castShadow = true;
+    card.receiveShadow = true;
+    
+    // 自定义数据
+    card.userData = { 
+        id: i, 
+        originalX: card.position.x,
+        baseY: 0,
+        targetY: 0,
+        targetZ: 0,
+        targetRotX: 0,
+        targetRotY: 0,
+        isHovered: false
+    };
+    
+    deckGroup.add(card);
+    cards.push(card);
+}
+
+// 粒子系统 (用于消散)
+let particleSystem;
+function initParticles(pos) {
+    const geometry = new THREE.BufferGeometry();
+    const positions = [];
+    const velocities = [];
+    const sizes = [];
+    
+    for(let i=0; i<CONFIG.particlesCount; i++) {
+        // 在卡牌体积内随机
+        const x = (Math.random() - 0.5) * 1.4;
+        const y = (Math.random() - 0.5) * 2.4;
+        const z = (Math.random() - 0.5) * 0.2;
+        positions.push(x, y, z);
         
-        for (let i = 0; i < 30; i++) {
-            const mat = new THREE.MeshPhongMaterial({ 
-                color: 0x110033, 
-                emissive: 0x220055,
-                shininess: 100
-            });
-            const mesh = new THREE.Mesh(buildGeo, mat);
-            resetObj(mesh, -i * 15, true);
-            scene.add(mesh);
-            buildings.push(mesh);
-        }
+        // 爆炸速度
+        velocities.push(
+            (Math.random() - 0.5) * 0.1,
+            (Math.random() - 0.5) * 0.1,
+            (Math.random() - 0.5) * 0.1 + 0.02 // 略微向前
+        );
+        sizes.push(Math.random());
+    }
+    
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geometry.setAttribute('size', new THREE.Float32BufferAttribute(sizes, 1));
+    
+    const mat = new THREE.PointsMaterial({
+        size: 0.05,
+        color: 0xffd700,
+        map: createParticleTexture(),
+        transparent: true,
+        opacity: 1,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending
+    });
+    
+    particleSystem = new THREE.Points(geometry, mat);
+    particleSystem.userData = { velocities: velocities, life: 1.0 };
+    particleSystem.position.copy(pos);
+    scene.add(particleSystem);
+}
 
-        // --- 3. 障碍物 (危险物体) ---
-        const obstacles = [];
-        // 使用八面体看起来更有攻击性
-        const obstacleGeo = new THREE.OctahedronGeometry(1.5, 0); 
-        const obstacleMat = new THREE.MeshPhongMaterial({ 
-            color: 0xff0000, 
-            emissive: 0x550000,
-            shininess: 50,
-            wireframe: false
-        });
+// Post-Processing
+const composer = new THREE.EffectComposer(renderer);
+const renderPass = new THREE.RenderPass(scene, camera);
+composer.addPass(renderPass);
+
+const bloomPass = new THREE.UnrealBloomPass(
+    new THREE.Vector2(window.innerWidth, window.innerHeight),
+    CONFIG.bloomStrength,
+    CONFIG.bloomRadius,
+    CONFIG.bloomThreshold
+);
+composer.addPass(bloomPass);
+
+// ------------------------------------------------------------------
+// 3. 交互逻辑 (The Brain)
+// ------------------------------------------------------------------
+
+// 辅助 Raycaster
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+
+function updateGestureLogic(landmarks) {
+    if (!landmarks || STATE.mode === 'VIEWING' || STATE.mode === 'DISSOLVING') return;
+
+    // 1. 获取关键点
+    const thumbTip = landmarks[4];
+    const indexTip = landmarks[8];
+    const middleTip = landmarks[12];
+    const palmBase = landmarks[0];
+    const indexMCP = landmarks[5]; // 食指根部
+
+    // 坐标转换为 -1 到 1
+    STATE.handX = (1 - indexTip.x) * 2 - 1; // 镜像翻转
+    STATE.handY = (1 - indexTip.y) * 2 - 1;
+
+    // 2. 挥手检测 (计算掌心速度)
+    const currentPalmX = (1 - palmBase.x);
+    const deltaX = currentPalmX - STATE.lastHandX;
+    STATE.lastHandX = currentPalmX;
+
+    // 3. 捏合检测 (食指+拇指距离)
+    const dist = Math.hypot(thumbTip.x - indexTip.x, thumbTip.y - indexTip.y);
+    STATE.pinchDist = dist;
+    const isPinching = dist < 0.05;
+
+    // 4. 张手检测 (食指和中指指尖距离远)
+    const openDist = Math.hypot(indexTip.x - middleTip.x, indexTip.y - middleTip.y);
+    const isPalmOpen = openDist > 0.15; // 简化判断
+
+    // 状态机判断
+    if (isPalmOpen && Math.abs(STATE.handX) < 0.3) {
+        STATE.gesture = 'OPEN';
+        // 手掌张开在中间 -> 刹车
+        STATE.velocity *= 0.85; 
+    } else if (isPinching) {
+        STATE.gesture = 'PINCH';
+    } else if (Math.abs(deltaX) > 0.02) {
+        STATE.gesture = 'WAVE';
+        // 施加推力
+        STATE.velocity += deltaX * 1.5; // 灵敏度系数
+    } else {
+        STATE.gesture = 'HOVER';
+    }
+
+    // 5. 悬停高亮逻辑 (仅在浏览模式)
+    if (STATE.mode === 'BROWSING' && STATE.gesture === 'HOVER') {
+        // 简单的逻辑：将屏幕X坐标映射到牌堆位置
+        // Raycaster 更准确，我们用 Raycaster 投射食指位置
+        mouse.x = STATE.handX;
+        mouse.y = STATE.handY;
+        raycaster.setFromCamera(mouse, camera);
         
-        // 线框外壳，增加科技感
-        const wireGeo = new THREE.WireframeGeometry(obstacleGeo);
-        const wireMat = new THREE.LineBasicMaterial({ color: 0xff3333 });
-
-        for (let i = 0; i < 10; i++) {
-            const group = new THREE.Group();
-            
-            const core = new THREE.Mesh(obstacleGeo, obstacleMat);
-            const wire = new THREE.LineSegments(wireGeo, wireMat);
-            
-            group.add(core);
-            group.add(wire);
-            
-            // 初始放置在很远的地方，避免开局就撞
-            resetObj(group, -100 - i * 30, false); 
-            
-            scene.add(group);
-            obstacles.push(group);
-        }
-
-        // 通用重置函数
-        function resetObj(obj, zPos, isBuilding = false) {
-            obj.position.z = zPos;
-            
-            if (isBuilding) {
-                // 建筑在路两边
-                const side = Math.random() > 0.5 ? 1 : -1;
-                obj.position.x = side * (CONFIG.roadWidth / 2 + 5 + Math.random() * 10);
-                obj.scale.set(1, 5 + Math.random() * 20, 1); // 随机高度
-                obj.position.y = obj.scale.y / 2 - 2;
-            } else {
-                // 障碍物在路中间，随机 X
-                // 留出一点边距，避免完全不可躲避
-                const safeWidth = CONFIG.roadWidth - 10;
-                obj.position.x = (Math.random() - 0.5) * safeWidth;
-                obj.position.y = 1.5; // 悬浮
-                
-                // 随机旋转增加动感
-                obj.rotation.set(Math.random(), Math.random(), Math.random());
-            }
-        }
-
-        // --- 4. 粒子星空 ---
-        const starGeo = new THREE.BufferGeometry();
-        const starPos = [];
-        for(let i=0; i<1500; i++) {
-            starPos.push((Math.random()-0.5)*400, (Math.random()-0.5)*200, (Math.random()-0.5)*400);
-        }
-        starGeo.setAttribute('position', new THREE.Float32BufferAttribute(starPos, 3));
-        const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.4 });
-        const stars = new THREE.Points(starGeo, starMat);
-        scene.add(stars);
-
-
-        // =========================================
-        // 3. 游戏逻辑
-        // =========================================
+        // 我们不直接 raycast 到 Mesh (太耗费)，而是计算 Ray 与 Z=0 平面的交点 X
+        // 或者更简单的：根据 scrollX 和 handX 估算
+        // 让我们用 Raycaster + Invisible Plane 获得精确的世界坐标 X
+        const planeZ = 0;
+        const vec = new THREE.Vector3();
+        vec.set(mouse.x, mouse.y, 0.5);
+        vec.unproject(camera);
+        vec.sub(camera.position).normalize();
+        const distance = (planeZ - camera.position.z) / vec.z;
+        const worldPos = camera.position.clone().add(vec.multiplyScalar(distance));
         
-        const keys = { left: false, right: false };
-        window.addEventListener('keydown', (e) => {
-            if(e.key === 'ArrowLeft') keys.left = true;
-            if(e.key === 'ArrowRight') keys.right = true;
-        });
-        window.addEventListener('keyup', (e) => {
-            if(e.key === 'ArrowLeft') keys.left = false;
-            if(e.key === 'ArrowRight') keys.right = false;
-        });
+        // 查找哪个卡牌最接近 worldPos.x
+        let minDest = 999;
+        let targetIdx = -1;
+        
+        // 考虑到 deckGroup 在移动，我们需要把 worldPos 转换到 local 空间
+        const localX = worldPos.x - deckGroup.position.x;
 
-        // 碰撞闪烁函数
-        function triggerDamage() {
-            if (STATE.isHit) return; // 避免连续触发
-            STATE.isHit = true;
-            UI.damage.style.opacity = '0.8';
-            setTimeout(() => {
-                UI.damage.style.opacity = '0';
-                STATE.isHit = false;
-            }, 300);
-        }
-
-        function updatePhysics(dt) {
-            // 1. 输入处理
-            if (STATE.controlMode === 'keyboard') {
-                if (keys.left) STATE.targetSteering = -1;
-                else if (keys.right) STATE.targetSteering = 1;
-                else STATE.targetSteering = 0;
-            }
-
-            // 2. 速度处理
-            if (STATE.speed < CONFIG.maxSpeed) {
-                STATE.speed += CONFIG.acceleration;
-            }
-            
-            // 3. 转向平滑
-            STATE.steering += (STATE.targetSteering - STATE.steering) * CONFIG.steeringSensitivity;
-
-            // 4. 计算移动距离
-            // 这个 moveDist 是场景物体向相机移动的距离（相对运动）
-            const moveDist = (STATE.speed / 10) * dt * 10;
-            
-            // 纹理滚动
-            roadTexture.offset.y -= moveDist * 0.05;
-
-            // --- 物体移动与回收 ---
-            
-            // 移动建筑
-            buildings.forEach(b => {
-                b.position.z += moveDist;
-                if(b.position.z > 10) resetObj(b, -200 - Math.random() * 50, true);
-            });
-
-            // 移动障碍物 + 碰撞检测
-            obstacles.forEach(obs => {
-                obs.position.z += moveDist;
-                // 自转
-                obs.rotation.x += 0.02;
-                obs.rotation.y += 0.02;
-
-                // 碰撞检测逻辑
-                // 障碍物 Z 轴接近相机 (相机在 5, 物体到 5 附近)
-                // 并且 X 轴距离足够近
-                if (Math.abs(obs.position.z - camera.position.z) < 2.5) {
-                    const distX = Math.abs(obs.position.x - camera.position.x);
-                    if (distX < 2.5) { // 碰撞半径
-                        // 撞到了！
-                        triggerDamage();
-                        STATE.speed = STATE.speed * 0.4; // 速度减半惩罚
-                        // 撞完后为了防止连续判定，把物体移走
-                        obs.position.z = 20; 
-                    }
+        cards.forEach((card, idx) => {
+            const dist = Math.abs(card.userData.originalX - localX);
+            if (dist < 0.8) { // 阈值
+                if (dist < minDest) {
+                    minDest = dist;
+                    targetIdx = idx;
                 }
-
-                // 回收
-                if(obs.position.z > 10) resetObj(obs, -300 - Math.random() * 100, false);
-            });
-
-            // 移动粒子
-            const sPos = stars.geometry.attributes.position.array;
-            for(let i=2; i<sPos.length; i+=3) {
-                sPos[i] += moveDist * 0.5;
-                if(sPos[i] > 20) sPos[i] = -300;
             }
-            stars.geometry.attributes.position.needsUpdate = true;
-
-            // 5. 玩家/相机横向移动
-            const lateralSpeed = STATE.speed * 0.12 * dt;
-            camera.position.x += STATE.steering * lateralSpeed;
-
-            // 边界限制
-            const limit = CONFIG.roadWidth / 2 - 2;
-            if (camera.position.x > limit) { camera.position.x = limit; STATE.speed *= 0.98; }
-            if (camera.position.x < -limit) { camera.position.x = -limit; STATE.speed *= 0.98; }
-
-            // 6. 相机动态效果 (Roll & FOV)
-            camera.rotation.z = -STATE.steering * 0.2; // 转向倾斜
-            camera.fov = 75 + (STATE.speed / CONFIG.maxSpeed) * 15; // 极速拉伸视野
-            camera.updateProjectionMatrix();
-
-            // 7. 更新UI
-            UI.speed.innerText = Math.floor(STATE.speed);
-        }
-
-
-        // =========================================
-        // 4. MediaPipe 手势
-        // =========================================
-        const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
-        
-        hands.setOptions({
-            maxNumHands: 1,
-            modelComplexity: 0, // 性能优先
-            minDetectionConfidence: 0.5,
-            minTrackingConfidence: 0.5
         });
+        STATE.hoverIndex = targetIdx;
+    } else {
+        STATE.hoverIndex = -1;
+    }
 
-        hands.onResults((results) => {
-            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-                UI.handDot.classList.add('active');
-                STATE.controlMode = 'hand';
-                
-                const lm = results.multiHandLandmarks[0];
-                const wrist = lm[0];
-                const middle = lm[9];
-                
-                // 计算倾斜
-                const dx = middle.x - wrist.x; 
-                // dx > 0: 像右倒; dx < 0: 向左倒 (镜像后)
-                
-                // 映射灵敏度
-                const rawSteer = -dx * 6.0; // 负号因为我们要反向控制(镜像)
-                STATE.targetSteering = Math.max(-1, Math.min(1, rawSteer));
+    // 6. 抽牌触发
+    if (STATE.mode === 'BROWSING' && STATE.gesture === 'PINCH' && STATE.hoverIndex !== -1) {
+        triggerDrawCard(STATE.hoverIndex);
+    }
+}
+
+// 触发抽牌动画
+function triggerDrawCard(index) {
+    if (STATE.mode !== 'BROWSING') return;
+    STATE.mode = 'DRAWING';
+    STATE.selectedIndex = index;
+    const card = cards[index];
+
+    // 将卡牌从 Group 中“分离”视觉效果 (保持在 Group 结构中，但用 world position 动画覆盖)
+    // 更好的做法：把卡牌 attach 到 Scene，保留世界变换
+    scene.attach(card);
+
+    // GSAP 动画序列
+    const tl = gsap.timeline({
+        onComplete: () => {
+            STATE.mode = 'VIEWING';
+        }
+    });
+
+    // 1. 移出并变大
+    tl.to(card.position, {
+        x: 0,
+        y: 0,
+        z: 8, // 靠近相机
+        duration: 1.5,
+        ease: "power2.inOut"
+    }, 0);
+
+    // 2. 翻转 (注意材质顺序，index 5是背面，4是正面)
+    // 初始是背面朝像机 (Rotation 0)，我们需要绕 Y 轴转 180
+    tl.to(card.rotation, {
+        y: Math.PI, // 翻转 180 度
+        x: 0,
+        z: 0,
+        duration: 1.5,
+        ease: "back.out(1.2)" // 带一点弹性
+    }, 0.2);
+
+    // 3. Bloom 爆发
+    tl.to(bloomPass, {
+        strength: 3.0,
+        duration: 0.5,
+        yoyo: true,
+        repeat: 1
+    }, 0.5);
+}
+
+// 触发消散
+function triggerDissolve() {
+    if (STATE.mode !== 'VIEWING') return;
+    STATE.mode = 'DISSOLVING';
+    
+    const card = cards[STATE.selectedIndex];
+    
+    // 初始化粒子
+    initParticles(card.position);
+
+    // 隐藏卡牌
+    card.visible = false;
+
+    // 粒子动画在 render loop 中处理，过几秒重置
+    setTimeout(resetGame, 3000);
+}
+
+function resetGame() {
+    // 清理粒子
+    if(particleSystem) {
+        scene.remove(particleSystem);
+        particleSystem.geometry.dispose();
+        particleSystem = null;
+    }
+    
+    // 重置卡牌
+    const card = cards[STATE.selectedIndex];
+    deckGroup.attach(card); // 放回组里
+    card.visible = true;
+    card.position.set(card.userData.originalX, 0, 0);
+    card.rotation.set(0, 0, 0);
+    
+    STATE.mode = 'BROWSING';
+    STATE.selectedIndex = -1;
+    STATE.hoverIndex = -1;
+    STATE.velocity = 0;
+    
+    // 重置 Bloom
+    bloomPass.strength = CONFIG.bloomStrength;
+}
+
+// ------------------------------------------------------------------
+// 4. 主循环 (Animation Loop)
+// ------------------------------------------------------------------
+const clock = new THREE.Clock();
+
+function animate() {
+    requestAnimationFrame(animate);
+    
+    const dt = clock.getDelta();
+
+    // --- 物理滚动逻辑 ---
+    if (STATE.mode === 'BROWSING') {
+        // 阻尼
+        STATE.velocity *= CONFIG.scrollFriction;
+        
+        // 限制最小速度
+        if (Math.abs(STATE.velocity) < 0.001) STATE.velocity = 0;
+        
+        deckGroup.position.x += STATE.velocity;
+
+        // 边界限制 (类似弹簧回弹)
+        const minX = - (CONFIG.cardCount * CONFIG.cardGap) / 2; 
+        const maxX = (CONFIG.cardCount * CONFIG.cardGap) / 2;
+        
+        // 软边界逻辑：稍微拉回来
+        if (deckGroup.position.x > 8) deckGroup.position.x = THREE.MathUtils.lerp(deckGroup.position.x, 8, 0.1);
+        if (deckGroup.position.x < -25) deckGroup.position.x = THREE.MathUtils.lerp(deckGroup.position.x, -25, 0.1);
+
+        // --- 卡牌个体动画 (Hover effect) ---
+        cards.forEach((card, i) => {
+            // 基础位置复位
+            let targetY = 0;
+            let targetZ = 0;
+            let targetRotX = 0;
+            let targetRotZ = 0;
+            let scale = 1;
+
+            if (i === STATE.hoverIndex) {
+                targetY = 0.5;
+                targetZ = 1.0;
+                targetRotX = -0.2; // 稍微前倾
+                scale = 1.1;
+                // 让 hover 的卡牌发光更亮
+                card.material[5].emissive = new THREE.Color(0x222222); 
             } else {
-                UI.handDot.classList.remove('active');
-                STATE.controlMode = 'keyboard';
+                card.material[5].emissive = new THREE.Color(0x000000);
             }
+
+            // 平滑插值
+            card.position.y = THREE.MathUtils.lerp(card.position.y, targetY, 0.1);
+            card.position.z = THREE.MathUtils.lerp(card.position.z, targetZ, 0.1);
+            card.rotation.x = THREE.MathUtils.lerp(card.rotation.x, targetRotX, 0.1);
+            // 微微的随机漂浮
+            const time = clock.getElapsedTime();
+            card.position.y += Math.sin(time * 2 + i) * 0.002;
         });
+    }
 
-        const cameraUtils = new Camera(UI.video, {
-            onFrame: async () => await hands.send({image: UI.video}),
-            width: 320, height: 240
-        });
+    // --- 粒子更新 ---
+    if (STATE.mode === 'DISSOLVING' && particleSystem) {
+        const positions = particleSystem.geometry.attributes.position.array;
+        const velocities = particleSystem.userData.velocities;
+        
+        for(let i=0; i<CONFIG.particlesCount; i++) {
+            positions[i*3] += velocities[i*3] + (Math.random()-0.5)*0.01;
+            positions[i*3+1] += velocities[i*3+1] + (Math.random()-0.5)*0.01;
+            positions[i*3+2] += velocities[i*3+2];
+            
+            // 逐渐变大并消散
+            velocities[i*3+1] += 0.001; // 上升
+        }
+        particleSystem.geometry.attributes.position.needsUpdate = true;
+        
+        particleSystem.material.opacity -= 0.01;
+        if (particleSystem.material.opacity <= 0) particleSystem.material.opacity = 0;
+    }
 
-        cameraUtils.start()
-            .then(() => {
-                UI.camDot.classList.add('active');
-                UI.loader.style.opacity = 0;
-                setTimeout(() => UI.loader.style.display = 'none', 500);
-            })
-            .catch(() => {
-                UI.camDot.classList.add('error');
-                UI.loader.innerHTML = "摄像头启动失败 (需要HTTPS)";
-            });
-
-        // =========================================
-        // 5. 循环
-        // =========================================
-        const clock = new THREE.Clock();
-        function animate() {
-            requestAnimationFrame(animate);
-            updatePhysics(clock.getDelta());
-            renderer.render(scene, camera);
+    // --- 手势：查看模式下的消散 ---
+    if (STATE.mode === 'VIEWING') {
+        // 如果检测到张开手掌
+        if (STATE.gesture === 'OPEN') {
+            triggerDissolve();
         }
         
-        window.addEventListener('resize', () => {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        });
+        // 让展示的卡牌缓慢浮动
+        const card = cards[STATE.selectedIndex];
+        const time = clock.getElapsedTime();
+        card.rotation.z = Math.sin(time * 0.5) * 0.05;
+        card.rotation.y = Math.PI + Math.sin(time * 0.3) * 0.1;
+    }
 
+    // 渲染
+    composer.render();
+}
+
+// ------------------------------------------------------------------
+// 5. MediaPipe 初始化
+// ------------------------------------------------------------------
+const videoElement = document.getElementById('video-feed');
+const loadingElement = document.getElementById('loading');
+
+const hands = new Hands({locateFile: (file) => {
+    return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+}});
+
+hands.setOptions({
+    maxNumHands: 1,
+    modelComplexity: 1,
+    minDetectionConfidence: 0.7,
+    minTrackingConfidence: 0.7
+});
+
+hands.onResults(results => {
+    loadingElement.style.opacity = 0; // Hide loading once running
+    
+    if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+        STATE.isHandPresent = true;
+        updateGestureLogic(results.multiHandLandmarks[0]);
+    } else {
+        STATE.isHandPresent = false;
+        STATE.gesture = 'NONE';
+        STATE.hoverIndex = -1;
+    }
+});
+
+const cameraUtils = new Camera(videoElement, {
+    onFrame: async () => {
+        await hands.send({image: videoElement});
+    },
+    width: 640,
+    height: 480
+});
+
+// 启动
+cameraUtils.start()
+    .then(() => {
+        console.log("Camera started");
         animate();
-    </script>
+    })
+    .catch(err => {
+        console.error("Camera Error:", err);
+        loadingElement.innerHTML = "CAMERA ACCESS DENIED.<br>Please allow camera access.";
+    });
+
+// 窗口大小调整
+window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    composer.setSize(window.innerWidth, window.innerHeight);
+});
+
+</script>
 </body>
 </html>
