@@ -3,45 +3,54 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Three.js 塔罗手势抽卡 (MediaPipe)</title>
+    <title>Three.js 塔罗手势占卜 (MediaPipe)</title>
     <style>
-        body { margin: 0; overflow: hidden; background-color: #1a1a1a; font-family: 'Segoe UI', sans-serif; color: white; }
-        #canvas-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
-        #video-feed { position: absolute; bottom: 20px; right: 20px; width: 200px; height: 150px; transform: scaleX(-1); border: 2px solid #444; z-index: 2; opacity: 0.8; display: none; }
+        body { margin: 0; overflow: hidden; background-color: #050505; color: #ddd; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        #canvas-container { width: 100vw; height: 100vh; position: absolute; top: 0; left: 0; z-index: 1; }
         
         /* UI Overlay */
-        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; pointer-events: none; }
+        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 2; pointer-events: none; display: flex; flex-direction: column; justify-content: space-between; }
+        .pointer-events-auto { pointer-events: auto; }
         
-        /* Controls */
-        #controls { position: absolute; top: 20px; right: 20px; pointer-events: auto; display: flex; gap: 10px; }
-        button { background: rgba(0,0,0,0.6); color: #fff; border: 1px solid #fff; padding: 8px 16px; cursor: pointer; border-radius: 4px; transition: 0.3s; }
-        button:hover { background: rgba(255,255,255,0.2); }
-        button.active { background: #d4af37; color: #000; border-color: #d4af37; }
-
-        /* Status & Hints */
-        #status-bar { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); text-align: center; text-shadow: 0 2px 4px rgba(0,0,0,0.8); }
-        #gesture-hint { font-size: 1.2em; color: #d4af37; margin-bottom: 5px; font-weight: bold; }
-        #action-hint { font-size: 0.9em; color: #aaa; }
-
-        /* Result Display */
-        #result-overlay { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; opacity: 0; transition: opacity 0.5s; pointer-events: none; }
-        #card-name { font-size: 3em; color: #d4af37; margin: 0; text-transform: uppercase; letter-spacing: 2px; text-shadow: 0 0 10px rgba(212, 175, 55, 0.5); }
-        #card-meaning { font-size: 1.2em; max-width: 600px; margin-top: 10px; background: rgba(0,0,0,0.7); padding: 15px; border-radius: 8px; }
-
+        /* Loading */
+        #loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.8); padding: 20px; border: 1px solid #444; border-radius: 8px; text-align: center; pointer-events: auto; }
+        
+        /* Header & Controls */
+        #header { padding: 20px; display: flex; justify-content: space-between; align-items: flex-start; background: linear-gradient(to bottom, rgba(0,0,0,0.8), transparent); }
+        .hud-box { background: rgba(0, 0, 0, 0.5); padding: 10px 15px; border-radius: 8px; border: 1px solid rgba(255, 215, 0, 0.3); backdrop-filter: blur(4px); }
+        
+        /* Mode Switcher */
+        #controls button { background: #333; color: #fff; border: 1px solid #666; padding: 8px 12px; cursor: pointer; border-radius: 4px; transition: 0.2s; }
+        #controls button:hover { background: #555; }
+        #controls button.active { background: #8b7d28; border-color: #ffd700; }
+        
+        /* Webcam Preview */
+        #webcam-container { width: 160px; height: 120px; border: 2px solid #333; border-radius: 8px; overflow: hidden; position: relative; margin-top: 10px; transform: scaleX(-1); }
+        #input_video { width: 100%; height: 100%; object-fit: cover; }
+        
+        /* Card Info */
+        #card-display { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; opacity: 0; transition: opacity 0.5s; pointer-events: none; }
+        #card-display.show { opacity: 1; }
+        #card-display h1 { font-size: 2.5rem; margin: 0; text-shadow: 0 0 10px #ffd700; color: #ffd700; }
+        #card-display h2 { font-size: 1.2rem; color: #aaa; margin: 5px 0; font-style: italic; }
+        #card-display p { max-width: 400px; margin: 10px auto; background: rgba(0,0,0,0.7); padding: 10px; border-radius: 4px; }
+        
         /* History Panel */
-        #history-panel { position: absolute; top: 80px; left: 20px; width: 250px; bottom: 20px; overflow-y: auto; pointer-events: auto; background: rgba(0,0,0,0.5); padding: 10px; border-left: 2px solid #d4af37; scrollbar-width: thin; }
-        .history-item { margin-bottom: 15px; border-bottom: 1px solid #444; padding-bottom: 10px; animation: fadeIn 0.5s ease; }
-        .history-item img { width: 40px; height: 60px; float: left; margin-right: 10px; border: 1px solid #666; }
-        .h-title { color: #d4af37; font-size: 0.9em; font-weight: bold; }
-        .h-desc { font-size: 0.8em; color: #ddd; line-height: 1.2; }
-        .reversed-tag { color: #ff6b6b; font-size: 0.8em; margin-left: 5px; }
+        #history-panel { position: absolute; top: 80px; right: 20px; width: 220px; max-height: 70vh; overflow-y: auto; background: rgba(10, 10, 10, 0.85); border-left: 2px solid #333; padding: 10px; pointer-events: auto; }
+        #history-panel h3 { margin-top: 0; border-bottom: 1px solid #444; padding-bottom: 5px; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; }
+        .history-item { display: flex; align-items: center; margin-bottom: 8px; font-size: 12px; border-bottom: 1px solid #222; padding-bottom: 4px; }
+        .history-thumb { width: 30px; height: 50px; background-size: cover; margin-right: 8px; border-radius: 2px; }
+        .history-info { display: flex; flex-direction: column; }
+        .history-name { color: #ffd700; font-weight: bold; }
+        .history-meaning { color: #aaa; font-size: 10px; }
+        .reversed { color: #ff6b6b; }
 
-        /* Loader */
-        #loader { position: absolute; top:0; left:0; width:100%; height:100%; background:#000; display:flex; justify-content:center; align-items:center; z-index: 100; transition: opacity 1s; }
-        
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        /* Gesture Icons */
+        .gesture-guide { display: flex; gap: 15px; margin-top: 10px; font-size: 12px; color: #888; }
+        .g-icon { font-weight: bold; color: #ccc; }
     </style>
-    <!-- Three.js -->
+
+    <!-- Import Maps for Three.js -->
     <script type="importmap">
         {
             "imports": {
@@ -50,7 +59,7 @@
             }
         }
     </script>
-    <!-- MediaPipe -->
+    <!-- MediaPipe Hands -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
@@ -58,627 +67,644 @@
 </head>
 <body>
 
-    <div id="loader"><h2>正在加载资源与模型...</h2></div>
+    <div id="loading">正在初始化神秘学引擎...<br><small>请允许摄像头权限以体验手势操作</small></div>
 
-    <video id="video-feed" playsinline></video>
-    
     <div id="canvas-container"></div>
 
     <div id="ui-layer">
-        <div id="controls">
-            <button id="btn-mouse" onclick="setMode('mouse')">🖱️ 鼠标模式</button>
-            <button id="btn-hand" onclick="setMode('hand')">🖐️ 手势模式</button>
+        <div id="header">
+            <div class="hud-box pointer-events-auto" id="controls">
+                <div>模式选择：</div>
+                <button id="btn-hand" class="active">🖐 手势模式</button>
+                <button id="btn-mouse">🖱️ 鼠标模式</button>
+                <div id="webcam-container">
+                    <video id="input_video"></video>
+                </div>
+                <div class="gesture-guide">
+                    <div><span class="g-icon">🖐 张开</span><br>寻找</div>
+                    <div><span class="g-icon">👌 捏合</span><br>抓取</div>
+                    <div><span class="g-icon">✊ 握拳</span><br>确认/化灰</div>
+                </div>
+            </div>
+            
+            <div class="hud-box">
+                <div id="status-text">等待指令...</div>
+            </div>
         </div>
 
-        <div id="status-bar">
-            <div id="gesture-hint">等待指令...</div>
-            <div id="action-hint">🖐 张开手掌开始 | 👌 捏合抓取 | ✊ 握拳确认</div>
-        </div>
-
-        <div id="result-overlay">
-            <h1 id="card-name"></h1>
-            <div id="card-meaning"></div>
+        <div id="card-display">
+            <h1 id="card-name">The Fool</h1>
+            <h2 id="card-orientation">正位 (Upright)</h2>
+            <p id="card-desc">新的开始，冒险，无畏...</p>
         </div>
 
         <div id="history-panel">
-            <div style="text-align:center; color:#888; font-size:0.8em;">--- 抽卡记录 ---</div>
+            <h3>抽卡记录</h3>
             <div id="history-list"></div>
         </div>
     </div>
 
     <script type="module">
         import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-        // --- 1. 配置与数据 ---
-        const ASSETS = {
-            back: 'https://upload.wikimedia.org/wikipedia/commons/thumb/d/d8/Tarot_Back_2.jpg/309px-Tarot_Back_2.jpg', // 通用牌背
-            baseUrl: 'https://raw.githubusercontent.com/turtlemappin/tarot-deck/main/images/', // 某开源RWS图源
-            // 由于篇幅，这里模拟生成78张卡的数据结构，实际项目应完整列出
-            getDeck: () => generateTarotDeck()
-        };
-
-        const STATE = {
-            mode: 'mouse', // 'mouse' or 'hand'
-            gesture: 'NONE', // OPEN, PINCH, FIST, POINT
-            isGrabbing: false,
-            phase: 'IDLE', // IDLE, HOVER, GRABBED, REVEALED, DISSOLVING
-            handPos: new THREE.Vector2(), // Normalized -1 to 1
-            lastHandPos: new THREE.Vector2()
-        };
-
-        // --- 2. 塔罗牌数据生成器 ---
-        const majorArcana = [
-            "The Fool", "The Magician", "The High Priestess", "The Empress", "The Emperor", 
-            "The Hierophant", "The Lovers", "The Chariot", "Strength", "The Hermit", 
-            "Wheel of Fortune", "Justice", "The Hanged Man", "Death", "Temperance", 
-            "The Devil", "The Tower", "The Star", "The Moon", "The Sun", "Judgement", "The World"
+        // --- Configuration & Data ---
+        const TAROT_DATA = [
+            { id: 0, name: "The Fool", img: "m00.jpg", up: "新的开始，纯真，自发性，自由精神。", rev: "鲁莽，冒险，不考虑后果，愚蠢。" },
+            { id: 1, name: "The Magician", img: "m01.jpg", up: "意志力，欲望，创造，显化。", rev: "操纵，计划不周，潜能未发，幻觉。" },
+            { id: 2, name: "The High Priestess", img: "m02.jpg", up: "直觉，潜意识，内在声音，神秘。", rev: "压抑情感，由于，秘密被揭露。" },
+            { id: 3, name: "The Empress", img: "m03.jpg", up: "丰饶，女性特质，自然，养育。", rev: "创造力受阻，依赖，空虚。" },
+            { id: 4, name: "The Emperor", img: "m04.jpg", up: "权威，结构，控制，父性。", rev: "暴政，僵化，冷酷，缺乏纪律。" },
+            { id: 5, name: "The Hierophant", img: "m05.jpg", up: "传统，一致性，道德，教育。", rev: "反叛，非传统，新的信仰，限制。" },
+            { id: 6, name: "The Lovers", img: "m06.jpg", up: "爱，和谐，关系，价值观一致。", rev: "不和谐，不平衡，价值观冲突。" },
+            { id: 7, name: "The Chariot", img: "m07.jpg", up: "控制，意志力，成功，行动。", rev: "失去控制，缺乏方向，攻击性。" },
+            { id: 8, name: "Strength", img: "m08.jpg", up: "力量，勇气，说服力，影响力。", rev: "自我怀疑，软弱，不安全感。" },
+            { id: 9, name: "The Hermit", img: "m09.jpg", up: "寻找灵魂，反思，独处，内在指引。", rev: "孤独，孤立，偏执，退缩。" },
+            { id: 10, name: "Wheel of Fortune", img: "m10.jpg", up: "业力，好运，生命周期，命运。", rev: "厄运，抵抗变化，破坏循环。" },
+            { id: 11, name: "Justice", img: "m11.jpg", up: "正义，公平，真理，因果。", rev: "不公，缺乏责任，不诚实。" },
+            { id: 12, name: "The Hanged Man", img: "m12.jpg", up: "暂停，投降，放手，新视角。", rev: "拖延，抵抗，停滞，无谓牺牲。" },
+            { id: 13, name: "Death", img: "m13.jpg", up: "结束，转变，过渡，放手。", rev: "抵抗改变，无法前进，依赖过去。" },
+            { id: 14, name: "Temperance", img: "m14.jpg", up: "平衡，适度，耐心，目标。", rev: "不平衡，过度，缺乏长期视野。" },
+            { id: 15, name: "The Devil", img: "m15.jpg", up: "束缚，上瘾，物质主义，性。", rev: "挣脱束缚，恢复力量，打破枷锁。" },
+            { id: 16, name: "The Tower", img: "m16.jpg", up: "突变，混乱，启示，觉醒。", rev: "避免灾难，恐惧改变，推迟不可避免。" },
+            { id: 17, name: "The Star", img: "m17.jpg", up: "希望，信仰，目的，更新，灵性。", rev: "缺乏信心，绝望，灰心。" },
+            { id: 18, name: "The Moon", img: "m18.jpg", up: "幻觉，恐惧，焦虑，潜意识。", rev: "释放恐惧，压抑情感，清晰。" },
+            { id: 19, name: "The Sun", img: "m19.jpg", up: "积极，温暖，成功，活力。", rev: "内心孩童，过度乐观，不切实际。" },
+            { id: 20, name: "Judgement", img: "m20.jpg", up: "审判，重生，内在召唤，宽恕。", rev: "自我怀疑，拒绝召唤，忽视因果。" },
+            { id: 21, name: "The World", img: "m21.jpg", up: "完成，整合，成就，旅行。", rev: "未完成，缺乏封闭，走捷径。" }
         ];
-        const suits = ['Wands', 'Cups', 'Swords', 'Pentacles'];
-        const ranks = ['Ace', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Page', 'Knight', 'Queen', 'King'];
 
-        function generateTarotDeck() {
-            let deck = [];
-            let id = 0;
-            // 映射文件名逻辑 (根据选定的GitHub源调整)
-            // 假设源文件命名格式简单处理，实际需精确映射
-            const formatName = (n) => n.toLowerCase().replace(/ /g, '-');
-            
-            majorArcana.forEach((name, i) => {
-                deck.push({
-                    id: id++, name: name, type: 'major',
-                    url: `${ASSETS.baseUrl}major/${i < 10 ? '0'+i : i}.jpg`, // 需根据实际源修正，这里使用占位逻辑
-                    // 修正：由于github源文件名不一定规则，这里为演示效果，若加载失败显示fallback颜色
-                    fallbackColor: 0x4a4a4a,
-                    meaningUp: "新的开始，自由，纯真。",
-                    meaningRev: "鲁莽，冒险，幼稚。"
-                });
-            });
+        // Using Wikipedia commons or GitHub hosted RWS deck
+        const IMG_BASE_URL = "https://raw.githubusercontent.com/tobyleft/tarot-images/main/rws/";
+        const BACK_IMG_URL = "https://i.imgur.com/P4Mh00o.jpeg"; // Generic pattern
 
-            suits.forEach(suit => {
-                ranks.forEach((rank, i) => {
-                    deck.push({
-                        id: id++, name: `${rank} of ${suit}`, type: 'minor',
-                        url: `${ASSETS.baseUrl}${suit.toLowerCase()}/${i+1}.jpg`, // 伪路径
-                        fallbackColor: 0x2a2a2a,
-                        meaningUp: `${suit}的正位含义：能量流动。`,
-                        meaningRev: `${suit}的逆位含义：能量受阻。`
-                    });
-                });
-            });
-            return deck;
-        }
-
-        // 真实环境修正：使用占位图生成器或稳定的API，防止跨域和404
-        // 为确保演示效果，我们使用 canvas 动态生成带文字的纹理作为 fallback
-        function createTexture(text, color = '#222') {
-            const canvas = document.createElement('canvas');
-            canvas.width = 256; canvas.height = 400;
-            const ctx = canvas.getContext('2d');
-            ctx.fillStyle = '#fff'; ctx.fillRect(0,0,256,400); // 边框
-            ctx.fillStyle = color; ctx.fillRect(10,10,236,380);
-            ctx.fillStyle = '#d4af37'; ctx.font = '20px Arial'; ctx.textAlign = 'center';
-            ctx.fillText(text.split(' ').slice(0,2).join(' '), 128, 180);
-            ctx.fillText(text.split(' ').slice(2).join(' '), 128, 210);
-            const tex = new THREE.CanvasTexture(canvas);
-            return tex;
-        }
-
-        let fullDeck = ASSETS.getDeck();
+        // --- Game State & Variables ---
+        let scene, camera, renderer, raycaster;
+        let cardMesh, cardBackMesh, particles;
+        let cursorMesh, glowLight;
+        
+        let availableCards = [...TAROT_DATA];
         let currentCardData = null;
+        let isReversed = false;
 
-        // --- 3. Three.js 初始化 ---
-        const scene = new THREE.Scene();
-        // 雾气效果，增加神秘感
-        scene.fog = new THREE.FogExp2(0x111111, 0.02);
-
-        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
-        camera.position.set(0, 0, 5);
-
-        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-        document.getElementById('canvas-container').appendChild(renderer.domElement);
-
-        // 灯光
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
-        scene.add(ambientLight);
-        const dirLight = new THREE.DirectionalLight(0xffd700, 1);
-        dirLight.position.set(5, 5, 5);
-        scene.add(dirLight);
-        const pointLight = new THREE.PointLight(0x00ffff, 0.5);
-        pointLight.position.set(-2, 0, 2);
-        scene.add(pointLight);
-
-        // 粒子系统组（用于管理所有的灰烬）
-        const ashGroup = new THREE.Group();
-        scene.add(ashGroup);
-
-        // 卡牌对象
-        const CARD_GEO = new THREE.PlaneGeometry(2, 3.5, 32, 32); // 细分多一点用于变形或粒子采样
-        let cardMesh = null;
+        let interactionMode = 'HAND'; // 'HAND' or 'MOUSE'
+        let mouse = new THREE.Vector2();
+        let handCursorPos = new THREE.Vector3(); // Normalized -1 to 1
+        
+        // Gesture State
+        let gestureState = 'OPEN'; // OPEN, PINCH, FIST, POINT
+        let isHolding = false;
+        let isConfirmed = false;
+        
+        // Animation Vars
         let cardTargetPos = new THREE.Vector3(0, 0, 0);
         let cardTargetRot = new THREE.Euler(0, 0, 0);
+        let clock = new THREE.Clock();
 
-        // 光标 (用于调试和鼠标模式)
-        const cursorGeo = new THREE.RingGeometry(0.05, 0.08, 32);
-        const cursorMat = new THREE.MeshBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 0.5, depthTest: false });
-        const cursorMesh = new THREE.Mesh(cursorGeo, cursorMat);
-        cursorMesh.renderOrder = 999;
-        scene.add(cursorMesh);
+        // --- Init Three.js ---
+        function initThree() {
+            const container = document.getElementById('canvas-container');
+            
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x111111);
+            scene.fog = new THREE.FogExp2(0x111111, 0.02);
 
-        // --- 4. 核心逻辑 ---
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
+            camera.position.set(0, 0, 5);
 
-        function spawnCard() {
-            if (fullDeck.length === 0) {
-                alert("牌库已空，重新洗牌！");
-                fullDeck = ASSETS.getDeck();
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            container.appendChild(renderer.domElement);
+
+            // Lighting
+            const ambientLight = new THREE.AmbientLight(0x404040, 2);
+            scene.add(ambientLight);
+
+            const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
+            dirLight.position.set(2, 5, 5);
+            dirLight.castShadow = true;
+            scene.add(dirLight);
+
+            glowLight = new THREE.PointLight(0xffd700, 0, 5);
+            scene.add(glowLight);
+
+            // Raycaster
+            raycaster = new THREE.Raycaster();
+
+            // Cursor Visual
+            const cursorGeo = new THREE.SphereGeometry(0.05, 16, 16);
+            const cursorMat = new THREE.MeshBasicMaterial({ color: 0x00ffff, opacity: 0.7, transparent: true });
+            cursorMesh = new THREE.Mesh(cursorGeo, cursorMat);
+            scene.add(cursorMesh);
+
+            // Initial Card Spawn
+            spawnNewCard();
+
+            // Event Listeners
+            window.addEventListener('resize', onWindowResize);
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mousedown', () => { if(interactionMode === 'MOUSE') { gestureState = 'PINCH'; checkInteraction(); } });
+            document.addEventListener('mouseup', () => { if(interactionMode === 'MOUSE') { gestureState = 'OPEN'; releaseCard(); } });
+            document.addEventListener('contextmenu', (e) => { 
+                e.preventDefault(); 
+                if(interactionMode === 'MOUSE' && isHolding) { gestureState = 'FIST'; confirmSelection(); }
+            });
+
+            animate();
+        }
+
+        // --- Card Logic ---
+        function spawnNewCard() {
+            if (availableCards.length === 0) {
+                availableCards = [...TAROT_DATA]; // Reset deck if empty
             }
 
-            // 随机抽取
-            const index = Math.floor(Math.random() * fullDeck.length);
-            currentCardData = fullDeck.splice(index, 1)[0];
-            
-            // 随机正逆位
-            currentCardData.isReversed = Math.random() < 0.5;
+            // Remove old mesh if exists
+            if (cardMesh) { scene.remove(cardMesh); cardMesh = null; }
+            if (particles) { scene.remove(particles); particles = null; }
 
-            // 纹理
-            const texLoader = new THREE.TextureLoader();
-            // 牌背
-            const backTex = texLoader.load(ASSETS.back);
-            // 牌面 (由于URL可能失效，使用Fallback生成器)
-            const frontTex = createTexture(currentCardData.name, currentCardData.type==='major'?'#400':'#004'); 
-            
-            // 尝试加载真实图片(可选)
-            // texLoader.load(currentCardData.url, (tex)=>{ mat.map = tex; mat.needsUpdate=true; });
+            // Random Pick
+            const idx = Math.floor(Math.random() * availableCards.length);
+            currentCardData = availableCards[idx];
+            availableCards.splice(idx, 1);
 
-            const matFront = new THREE.MeshStandardMaterial({ 
-                map: frontTex, roughness: 0.4, metalness: 0.1 
+            // Orientation
+            isReversed = Math.random() < 0.5;
+
+            // Texture Loading
+            const loader = new THREE.TextureLoader();
+            const texFront = loader.load(IMG_BASE_URL + currentCardData.img, undefined, undefined, (err) => {
+                 // Fallback color if load fails
+                 if(cardMesh) cardMesh.material[4].color.setHex(0x550000);
             });
-            const matBack = new THREE.MeshStandardMaterial({ 
-                map: backTex, roughness: 0.6 
-            });
+            const texBack = loader.load(BACK_IMG_URL);
+            texFront.colorSpace = THREE.SRGBColorSpace;
+            texBack.colorSpace = THREE.SRGBColorSpace;
 
-            if (cardMesh) scene.remove(cardMesh);
+            // Geometry (Box for thickness)
+            const geometry = new THREE.BoxGeometry(1.5, 2.6, 0.02);
+            
+            // Materials: Right, Left, Top, Bottom, Front, Back
+            const sideMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
+            const faceMat = new THREE.MeshStandardMaterial({ map: texFront, roughness: 0.4, metalness: 0.1 });
+            const backMat = new THREE.MeshStandardMaterial({ map: texBack, roughness: 0.6 });
+            
+            // Note: BoxGeometry face indices: 0,1 (x), 2,3 (y), 4 (+z Front), 5 (-z Back)
+            const materials = [sideMat, sideMat, sideMat, sideMat, faceMat, backMat];
 
-            // 创建Mesh，使用正反面材质
-            // Geometry Group 0: front, 1: back. PlaneGeometry default normal is +Z.
-            // 为了正反面逻辑，我们需要两个Mesh背靠背或者Shader。简单起见，用Group包两个Plane。
+            cardMesh = new THREE.Mesh(geometry, materials);
             
-            const group = new THREE.Group();
-            
-            const frontMesh = new THREE.Mesh(CARD_GEO, matFront);
-            frontMesh.position.z = 0.01;
-            // 如果是逆位，纹理怎么处理？
-            // 逻辑：卡牌刚生成是盖着的（显示牌背）。
-            // 翻开时，如果Reversed，我们旋转Mesh Z轴 180度。
-            
-            const backMesh = new THREE.Mesh(CARD_GEO, matBack);
-            backMesh.rotation.y = Math.PI; // 背面朝外
-            
-            group.add(frontMesh);
-            group.add(backMesh);
+            // Initial Position (Deck pile position, slightly random)
+            cardMesh.position.set((Math.random()-0.5)*0.5, -1.5, -1);
+            cardMesh.rotation.set(-Math.PI/4, 0, Math.PI); // Face down initially
 
-            cardMesh = group;
-            
-            // 初始位置：屏幕下方或随机位置漂浮
-            cardMesh.position.set(0, -5, -2); 
-            cardMesh.rotation.set(0, Math.PI, 0); // 初始背面朝向相机
-            
             scene.add(cardMesh);
 
-            STATE.phase = 'IDLE';
-            cardTargetPos.set(0, 0, 0);
+            // Reset States
+            isHolding = false;
+            isConfirmed = false;
+            document.getElementById('card-display').classList.remove('show');
+            document.getElementById('status-text').innerText = interactionMode === 'HAND' ? "手掌张开：寻找 | 捏合：抓取" : "鼠标悬停：寻找 | 左键：抓取";
             
-            // UI Update
-            document.getElementById('result-overlay').style.opacity = 0;
-            updateHint("等待抽取...");
+            // Apply logic for orientation when revealed
+            // We store the target rotation for the "Reveal" phase
         }
 
-        function dissolveCard() {
-            if (!cardMesh) return;
-            
-            // 1. 生成粒子
-            const count = 2000;
-            const geo = new THREE.BufferGeometry();
-            const positions = [];
-            const velocities = [];
-            const life = []; // 0-1
-            
-            // 采样卡牌位置
-            // 简单起见，在一个矩形范围内生成
-            const width = 2; 
-            const height = 3.5;
-            
-            // 获取当前卡牌的世界坐标和旋转
-            cardMesh.updateMatrixWorld();
-            const center = cardMesh.position.clone();
-            
-            for(let i=0; i<count; i++) {
-                // 相对坐标
-                const rx = (Math.random() - 0.5) * width;
-                const ry = (Math.random() - 0.5) * height;
-                
-                // 应用旋转 (简化处理，假设面向相机)
-                // 若要精确，需应用四元数。
-                let p = new THREE.Vector3(rx, ry, 0);
-                p.applyEuler(cardMesh.rotation);
-                p.add(center);
-                
-                positions.push(p.x, p.y, p.z);
-                
-                // 速度: 向上漂浮 + 随机湍流
-                velocities.push(
-                    (Math.random()-0.5)*0.05, // x
-                    Math.random()*0.05 + 0.02, // y (up)
-                    (Math.random()-0.5)*0.05  // z
-                );
-                
-                life.push(1.0); // 满血
+        // --- Interaction Logic ---
+        function checkInteraction() {
+            if (isConfirmed || !cardMesh) return;
+
+            // Raycast from camera to cursor position
+            // Update Raycaster
+            if (interactionMode === 'MOUSE') {
+                raycaster.setFromCamera(mouse, camera);
+            } else {
+                // Map 3D cursor position back to screen space for raycaster (approx) or cast from camera to world pos
+                const direction = cursorMesh.position.clone().sub(camera.position).normalize();
+                raycaster.set(camera.position, direction);
             }
-            
-            geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-            geo.setAttribute('velocity', new THREE.Float32BufferAttribute(velocities, 3));
-            geo.setAttribute('life', new THREE.Float32BufferAttribute(life, 1));
-            
-            // 颜色取金色或灰烬色
-            const mat = new THREE.PointsMaterial({
-                color: 0xffd700,
-                size: 0.05,
-                transparent: true,
-                opacity: 1,
-                blending: THREE.AdditiveBlending
-            });
-            
-            const points = new THREE.Points(geo, mat);
-            points.userData = { isAsh: true };
-            ashGroup.add(points);
-            
-            // 2. 移除原模型
-            scene.remove(cardMesh);
-            cardMesh = null;
-            
-            // 3. UI 记录与展示
-            logHistory();
-            
-            // 4. 自动重置延迟
+
+            const intersects = raycaster.intersectObject(cardMesh);
+            const isHover = intersects.length > 0;
+
+            if (isHover) {
+                document.body.style.cursor = 'pointer';
+                if (!isHolding) {
+                    glowLight.position.copy(cardMesh.position);
+                    glowLight.intensity = 2;
+                }
+            } else {
+                document.body.style.cursor = 'default';
+                if (!isHolding) glowLight.intensity = 0;
+            }
+
+            // Logic: GRAB
+            if (gestureState === 'PINCH' && isHover && !isHolding) {
+                isHolding = true;
+                glowLight.color.setHex(0x00ff00);
+            }
+        }
+
+        function updateCardPhysics() {
+            if (!cardMesh || isConfirmed) return;
+
+            if (isHolding) {
+                // Card follows cursor
+                // We want the card to float in front of the camera
+                const targetPos = cursorMesh.position.clone();
+                // Add a little offset towards camera
+                // targetPos.z += 0.5; 
+                
+                // Lerp Position
+                cardMesh.position.lerp(targetPos, 0.1);
+
+                // Lerp Rotation: Face the camera upright
+                const targetQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, 0));
+                
+                // If it was face down, we flip it to face up (Front side is +Z)
+                // If isReversed is true, we rotate 180 on Z
+                
+                let revRot = isReversed ? Math.PI : 0;
+                
+                // Basic look at camera
+                cardMesh.lookAt(camera.position);
+                
+                // Adjust for upright/reverse and ensure front face is visible
+                // Initial geometry: Front is +Z. lookAt makes +Z point to camera.
+                // If reversed, rotate around Z axis local
+                cardMesh.rotateZ(revRot);
+
+                document.getElementById('status-text').innerText = interactionMode === 'HAND' ? "✊ 握拳：确认抽牌" : "🖱️ 右键：确认抽牌";
+            } else {
+                // Float gently back to idle or drift
+                cardMesh.position.y += Math.sin(clock.getElapsedTime()) * 0.002;
+                // If not held, maybe rotate slowly or lie on table? 
+                // For this game, let's keep it floating near where it was left or drift down
+                if (cardMesh.position.y < -1.5) cardMesh.position.y = -1.5;
+            }
+        }
+
+        function releaseCard() {
+            isHolding = false;
+            glowLight.color.setHex(0xffd700);
+        }
+
+        function confirmSelection() {
+            if (!isHolding || isConfirmed) return;
+            isConfirmed = true;
+            isHolding = false;
+
+            // UI Update
+            const uiDisp = document.getElementById('card-display');
+            document.getElementById('card-name').innerText = currentCardData.name;
+            const orientationText = isReversed ? "逆位 (Reversed)" : "正位 (Upright)";
+            document.getElementById('card-orientation').innerText = orientationText;
+            document.getElementById('card-orientation').className = isReversed ? "reversed" : "";
+            document.getElementById('card-desc').innerText = isReversed ? currentCardData.rev : currentCardData.up;
+            uiDisp.classList.add('show');
+
+            document.getElementById('status-text').innerText = "命运已定。";
+
+            // Add to history
+            addToHistory(currentCardData, isReversed);
+
+            // Trigger Ash Effect
+            createAshEffect();
+
+            // Auto reset timer
             setTimeout(() => {
-                spawnCard();
-            }, 3000);
+                spawnNewCard();
+            }, 6000);
         }
 
-        function updateAsh() {
-            ashGroup.children.forEach((pts, index) => {
-                const positions = pts.geometry.attributes.position.array;
-                const vels = pts.geometry.attributes.velocity.array;
-                const lifes = pts.geometry.attributes.life.array;
-                let alive = false;
-                
-                for(let i=0; i<lifes.length; i++) {
-                    if (lifes[i] > 0) {
-                        lifes[i] -= 0.015; // 衰减
-                        
-                        // Pos += Vel
-                        positions[i*3] += vels[i*3];
-                        positions[i*3+1] += vels[i*3+1];
-                        positions[i*3+2] += vels[i*3+2];
-                        
-                        // 湍流噪声模拟
-                        vels[i*3] += (Math.random()-0.5)*0.002;
-                        
-                        alive = true;
-                    }
-                }
-                
-                pts.geometry.attributes.position.needsUpdate = true;
-                pts.geometry.attributes.life.needsUpdate = true;
-                pts.material.opacity = Math.max(...lifes); // 整体透明度简单淡出
-                
-                if (!alive) {
-                    ashGroup.remove(pts);
-                    pts.geometry.dispose();
-                    pts.material.dispose();
-                }
-            });
-        }
-
-        function logHistory() {
+        function addToHistory(data, reversed) {
             const list = document.getElementById('history-list');
             const item = document.createElement('div');
             item.className = 'history-item';
             
-            const meaning = currentCardData.isReversed ? currentCardData.meaningRev : currentCardData.meaningUp;
-            const title = currentCardData.name + (currentCardData.isReversed ? " <span class='reversed-tag'>(逆位)</span>" : "");
-            
-            // 生成缩略图 (这里复用生成逻辑，实际应用img src)
-            // 简单用canvas生成base64
-            const cvs = document.createElement('canvas'); cvs.width=40; cvs.height=60;
-            const ctx = cvs.getContext('2d');
-            ctx.fillStyle = currentCardData.isReversed ? '#500' : '#005'; ctx.fillRect(0,0,40,60);
+            // Creating a small thumbnail style
+            const imgUrl = IMG_BASE_URL + data.img;
             
             item.innerHTML = `
-                <img src="${cvs.toDataURL()}">
-                <div class="h-title">${title}</div>
-                <div class="h-desc">${meaning}</div>
-                <div style="clear:both"></div>
+                <div class="history-thumb" style="background-image: url('${imgUrl}'); transform: ${reversed ? 'rotate(180deg)' : 'none'}"></div>
+                <div class="history-info">
+                    <span class="history-name">${data.name}</span>
+                    <span class="history-meaning ${reversed ? 'reversed' : ''}">${reversed ? '逆位' : '正位'}</span>
+                </div>
             `;
             list.prepend(item);
         }
 
-        function showResultUI() {
-            const overlay = document.getElementById('result-overlay');
-            const nameEl = document.getElementById('card-name');
-            const meanEl = document.getElementById('card-meaning');
+        // --- Ash Particle Effect ---
+        function createAshEffect() {
+            // Sampling points from the box volume/surface
+            const particleCount = 3000;
+            const geo = new THREE.BufferGeometry();
+            const positions = [];
+            const speeds = [];
+            const opacity = [];
+            const sizes = [];
+
+            // Get card current world transform
+            cardMesh.updateMatrixWorld();
+            const center = cardMesh.position.clone();
+            const rotation = cardMesh.rotation.clone();
+
+            const width = 1.5; const height = 2.6;
             
-            nameEl.innerHTML = currentCardData.name + (currentCardData.isReversed ? " <br><small>(逆位)</small>" : "");
-            meanEl.innerText = currentCardData.isReversed ? currentCardData.meaningRev : currentCardData.meaningUp;
-            
-            overlay.style.opacity = 1;
-        }
+            for(let i=0; i<particleCount; i++) {
+                // Local random pos
+                let x = (Math.random() - 0.5) * width;
+                let y = (Math.random() - 0.5) * height;
+                let z = (Math.random() - 0.5) * 0.05;
 
-        // --- 5. 输入处理与状态机 ---
+                // Apply card rotation/pos manually or just spawn cloud at location
+                // Simple version: Spawn cloud at card position, no complex matrix math for demo brevity
+                // Better: transform local point to world
+                let vec = new THREE.Vector3(x, y, z);
+                vec.applyEuler(rotation);
+                vec.add(center);
 
-        const raycaster = new THREE.Raycaster();
-        
-        // 鼠标事件
-        window.addEventListener('mousemove', (e) => {
-            if (STATE.mode !== 'mouse') return;
-            STATE.handPos.x = (e.clientX / window.innerWidth) * 2 - 1;
-            STATE.handPos.y = -(e.clientY / window.innerHeight) * 2 + 1;
-        });
-        window.addEventListener('mousedown', () => {
-            if (STATE.mode !== 'mouse') return;
-            STATE.isGrabbing = true; // 模拟 Pinch
-            STATE.gesture = 'PINCH';
-        });
-        window.addEventListener('mouseup', () => {
-            if (STATE.mode !== 'mouse') return;
-            STATE.isGrabbing = false;
-            STATE.gesture = 'NONE';
-        });
-        // 鼠标点击作为确认（模拟Fist）
-        window.addEventListener('dblclick', () => {
-            if (STATE.mode !== 'mouse' || STATE.phase !== 'REVEALED') return;
-            STATE.gesture = 'FIST'; // 触发确认
-            setTimeout(() => STATE.gesture = 'NONE', 500);
-        });
-
-        function updateLogic() {
-            // 光标跟随
-            // 将 2D 归一化坐标转换为 3D 世界坐标 (Z=0平面)
-            const vec = new THREE.Vector3(STATE.handPos.x, STATE.handPos.y, 0.5);
-            vec.unproject(camera);
-            const dir = vec.sub(camera.position).normalize();
-            const distance = -camera.position.z / dir.z; // 求与Z=0平面的交点
-            const pos = camera.position.clone().add(dir.multiplyScalar(distance));
-            
-            // 限制范围
-            pos.x = Math.max(-5, Math.min(5, pos.x));
-            pos.y = Math.max(-3, Math.min(3, pos.y));
-            
-            cursorMesh.position.copy(pos);
-            cursorMat.color.setHex(STATE.gesture === 'PINCH' ? 0xff0000 : (STATE.gesture === 'FIST' ? 0x0000ff : 0x00ff00));
-
-            if (!cardMesh) return;
-
-            // 射线检测
-            raycaster.setFromCamera(STATE.handPos, camera);
-            const intersects = raycaster.intersectObject(cardMesh, true);
-            const isHovering = intersects.length > 0;
-
-            // 状态机
-            switch (STATE.phase) {
-                case 'IDLE':
-                    // 默认卡牌背面朝上漂浮
-                    cardTargetPos.set(0, 0, 0);
-                    cardTargetRot.set(0, Math.PI, 0); // 背面
-                    
-                    if ((STATE.gesture === 'OPEN' || isHovering) && STATE.mode === 'hand') {
-                        // 手势模式下 Open 可以在 Idle 时“唤醒”或微调
-                    }
-                    
-                    if (STATE.gesture === 'PINCH' && isHovering) {
-                        STATE.phase = 'GRABBED';
-                    }
-                    break;
-
-                case 'GRABBED':
-                    updateHint("拖动并松开以展示");
-                    // 卡牌跟随光标
-                    cardTargetPos.copy(pos);
-                    // 稍微拿近一点
-                    cardTargetPos.z = 1; 
-                    
-                    // 惯性旋转效果
-                    cardTargetRot.z = (pos.x - cardMesh.position.x) * 2;
-                    cardTargetRot.x = -(pos.y - cardMesh.position.y) * 2;
-                    // 保持背面
-                    cardTargetRot.y = Math.PI;
-
-                    if (STATE.gesture !== 'PINCH' && !STATE.isGrabbing) {
-                        // 松开 -> 进入展示阶段
-                        STATE.phase = 'REVEALED';
-                        revealCard();
-                    }
-                    break;
-
-                case 'REVEALED':
-                    updateHint("握拳 (Fist) 确认并化灰");
-                    // 悬停在屏幕中央偏前
-                    cardTargetPos.set(0, 0, 3);
-                    
-                    // 翻转逻辑：如果是正位，Y轴转回0；如果是逆位，Z轴180
-                    // 初始是 Y=PI (背面)。翻开即 Y=0。
-                    let targetY = 0;
-                    let targetZ = 0;
-                    if (currentCardData.isReversed) {
-                         targetZ = Math.PI; // 逆位旋转
-                    }
-                    
-                    cardTargetRot.set(0, targetY, targetZ);
-
-                    if (STATE.gesture === 'FIST') {
-                        STATE.phase = 'DISSOLVING';
-                        dissolveCard();
-                    }
-                    break;
+                positions.push(vec.x, vec.y, vec.z);
+                
+                // Velocity: Up + Noise
+                speeds.push(
+                    (Math.random() - 0.5) * 0.02, // vx
+                    Math.random() * 0.05 + 0.01,  // vy (up)
+                    (Math.random() - 0.5) * 0.02  // vz
+                );
+                
+                opacity.push(1.0);
+                sizes.push(Math.random() * 0.05 + 0.02);
             }
 
-            // 平滑插值更新卡牌 Transform
-            cardMesh.position.lerp(cardTargetPos, 0.1);
-            // 欧拉角插值比较麻烦，简单的分量lerp
-            cardMesh.rotation.x += (cardTargetRot.x - cardMesh.rotation.x) * 0.1;
-            cardMesh.rotation.y += (cardTargetRot.y - cardMesh.rotation.y) * 0.1;
-            cardMesh.rotation.z += (cardTargetRot.z - cardMesh.rotation.z) * 0.1;
+            geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+            geo.setAttribute('velocity', new THREE.Float32BufferAttribute(speeds, 3));
+            geo.setAttribute('alpha', new THREE.Float32BufferAttribute(opacity, 1));
+            geo.setAttribute('size', new THREE.Float32BufferAttribute(sizes, 1));
+
+            // Custom Shader Material for fading points
+            // Using standard PointsMaterial for simplicity in single file, manipulating alpha in loop
+            const mat = new THREE.PointsMaterial({
+                color: 0xcccccc,
+                size: 0.05,
+                transparent: true,
+                opacity: 1,
+                map: new THREE.TextureLoader().load('https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/sprites/disc.png'),
+                depthWrite: false,
+                vertexColors: false
+            });
+
+            particles = new THREE.Points(geo, mat);
+            scene.add(particles);
+
+            // Hide original card
+            cardMesh.visible = false;
         }
 
-        function revealCard() {
-            showResultUI();
-        }
+        function updateParticles() {
+            if (!particles) return;
 
-        function updateHint(text) {
-            document.getElementById('gesture-hint').innerText = text;
-        }
+            const positions = particles.geometry.attributes.position.array;
+            const vels = particles.geometry.attributes.velocity.array;
+            const alphas = particles.geometry.attributes.alpha.array;
+            let alive = false;
 
-        // --- 6. MediaPipe 集成 ---
-        const videoElement = document.getElementById('video-feed');
-        
-        window.setMode = (mode) => {
-            STATE.mode = mode;
-            document.getElementById('btn-mouse').classList.toggle('active', mode === 'mouse');
-            document.getElementById('btn-hand').classList.toggle('active', mode === 'hand');
-            
-            if (mode === 'hand') {
-                videoElement.style.display = 'block';
-                startCamera();
-            } else {
-                videoElement.style.display = 'none';
-            }
-        };
+            for (let i = 0; i < positions.length / 3; i++) {
+                // Update Pos
+                positions[i*3] += vels[i*3];
+                positions[i*3+1] += vels[i*3+1]; // Y
+                positions[i*3+2] += vels[i*3+2];
 
-        function onResults(results) {
-            if (STATE.mode !== 'hand') return;
-            
-            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-                const landmarks = results.multiHandLandmarks[0];
-                
-                // 1. 获取食指指尖 (8) 坐标 -> 映射到屏幕
-                // MediaPipe x: 0(left)-1(right), y: 0(top)-1(bottom)
-                // Three.js NDC: -1 to 1.
-                // 注意镜像: video是翻转的，所以 x = 1 - x
-                const indexTip = landmarks[8];
-                STATE.handPos.x = (1 - indexTip.x) * 2 - 1; 
-                STATE.handPos.y = -indexTip.y * 2 + 1;
+                // Add Turbulence
+                vels[i*3] += (Math.random()-0.5) * 0.001;
+                vels[i*3+2] += (Math.random()-0.5) * 0.001;
 
-                // 2. 手势识别
-                const thumbTip = landmarks[4];
-                const middleTip = landmarks[12];
-                const ringTip = landmarks[16];
-                const pinkyTip = landmarks[20];
-                const wrist = landmarks[0];
-
-                // Pinch: 食指与拇指距离
-                const pinchDist = distance(indexTip, thumbTip);
-                
-                // Fist: 所有指尖靠近手掌/手腕
-                // 简化判断：指尖y坐标大于指根(PIP)坐标 (在图像坐标系中y向下增大)
-                // 这里用简单的指尖到手腕距离判断
-                const fingersExtended = [8, 12, 16, 20].filter(idx => {
-                    // 如果指尖距离手腕 显著大于 PIP距离手腕，算伸展
-                    // 简化：指尖y < PIPy (对于手掌向上的情况不适用)
-                    // 通用算法：计算弯曲度。
-                    return isFingerExtended(landmarks, idx);
-                }).length;
-
-                if (pinchDist < 0.05) {
-                    STATE.gesture = 'PINCH';
-                } else if (fingersExtended === 0) {
-                    STATE.gesture = 'FIST';
-                } else if (fingersExtended >= 4) {
-                    STATE.gesture = 'OPEN';
-                } else {
-                    STATE.gesture = 'POINT';
+                // Decay Alpha
+                if (alphas[i] > 0) {
+                    alphas[i] -= 0.01 + Math.random() * 0.01;
+                    if (alphas[i] < 0) alphas[i] = 0;
+                    else alive = true;
                 }
-
-                // Smooth pointer
-                // (Already handled by logic frame update, input is raw here)
-            } else {
-                // No hand
             }
-        }
-        
-        function isFingerExtended(landmarks, tipIdx) {
-            // PIP joint is tipIdx - 2
-            const tip = landmarks[tipIdx];
-            const pip = landmarks[tipIdx - 2];
-            const wrist = landmarks[0];
-            // 简单的距离判断：Tip离Wrist比PIP离Wrist远
-            return distance(tip, wrist) > distance(pip, wrist) * 1.2;
-        }
 
-        function distance(a, b) {
-            return Math.sqrt(Math.pow(a.x - b.x, 2) + Math.pow(a.y - b.y, 2));
-        }
-
-        // 摄像头初始化
-        let cameraUtils = null;
-        async function startCamera() {
-            if (cameraUtils) return; // 已经启动
+            particles.geometry.attributes.position.needsUpdate = true;
+            // Hacky alpha fade via material opacity since vertex alpha requires ShaderMaterial
+            // For simple demo, we just fade the whole material or custom shader.
+            // Let's use the material opacity global decay for simplicity + scale up
+            particles.material.opacity -= 0.005;
             
-            try {
-                const hands = new Hands({locateFile: (file) => {
-                    return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
-                }});
-                
-                hands.setOptions({
-                    maxNumHands: 1,
-                    modelComplexity: 1,
-                    minDetectionConfidence: 0.5,
-                    minTrackingConfidence: 0.5
-                });
-                
-                hands.onResults(onResults);
-                
-                const cam = new Camera(videoElement, {
-                    onFrame: async () => {
-                        await hands.send({image: videoElement});
-                    },
-                    width: 640,
-                    height: 480
-                });
-                cam.start();
-                cameraUtils = cam;
-            } catch (e) {
-                console.error("Camera failed", e);
-                alert("摄像头启动失败，自动降级为鼠标模式。请检查HTTPS或权限。");
-                setMode('mouse');
+            if (particles.material.opacity <= 0) {
+                scene.remove(particles);
+                particles = null;
             }
         }
 
-        // --- 7. 主循环 ---
+        // --- Render Loop ---
         function animate() {
             requestAnimationFrame(animate);
+
+            const dt = clock.getDelta();
+
+            // Cursor smoothing
+            if (interactionMode === 'HAND') {
+                // handCursorPos is updated by MediaPipe (0-1), map to 3D Viewport
+                // Z=0 plane (approx)
+                const vector = new THREE.Vector3(handCursorPos.x, handCursorPos.y, 0.5);
+                vector.unproject(camera);
+                const dir = vector.sub(camera.position).normalize();
+                const distance = -camera.position.z / dir.z; // Intersection with Z=0
+                // We want interactions closer to camera usually
+                const targetPos = camera.position.clone().add(dir.multiplyScalar(4)); 
+                
+                cursorMesh.position.lerp(targetPos, 0.2);
+            } else {
+                 // Mouse logic handled in raycaster update, cursor mesh follows mouse ray
+                 raycaster.setFromCamera(mouse, camera);
+                 const dist = 4;
+                 const target = new THREE.Vector3().copy(raycaster.ray.direction).multiplyScalar(dist).add(raycaster.ray.origin);
+                 cursorMesh.position.lerp(target, 0.2);
+            }
             
-            updateLogic();
-            updateAsh();
-            
+            // Visual feedback for gesture
+            if (gestureState === 'PINCH') cursorMesh.material.color.setHex(0x00ff00);
+            else if (gestureState === 'FIST') cursorMesh.material.color.setHex(0xff0000);
+            else cursorMesh.material.color.setHex(0x00ffff);
+
+            // Interaction
+            if (!isConfirmed) {
+                checkInteraction();
+                updateCardPhysics();
+            }
+
+            // Particles
+            updateParticles();
+
             renderer.render(scene, camera);
         }
 
-        // 初始化
-        spawnCard();
-        animate();
-        
-        // 默认鼠标模式
-        setMode('mouse');
-        document.getElementById('loader').style.opacity = 0;
-        setTimeout(()=> document.getElementById('loader').remove(), 1000);
-
-        // Resize handler
-        window.addEventListener('resize', () => {
+        function onWindowResize() {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function onMouseMove(event) {
+            if (interactionMode !== 'MOUSE') return;
+            // Normalize mouse -1 to 1
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+        }
+
+        // --- MediaPipe Hands Setup ---
+        const videoElement = document.getElementById('input_video');
+        const loading = document.getElementById('loading');
+
+        function onResults(results) {
+            loading.style.display = 'none';
+            if (interactionMode !== 'HAND') return;
+
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                const landmarks = results.multiHandLandmarks[0];
+                
+                // 1. Position Mapping (Index Finger Tip #8)
+                // MediaPipe x is 0(left) to 1(right), y is 0(top) to 1(bottom)
+                // We flip X because selfie view
+                const x = (1 - landmarks[8].x) * 2 - 1; 
+                const y = -(landmarks[8].y) * 2 + 1;
+                
+                // Smoothly update global var
+                handCursorPos.set(x, y, 0);
+
+                // 2. Gesture Recognition
+                detectGesture(landmarks);
+            }
+        }
+
+        function distance(lm, i, j) {
+            const dx = lm[i].x - lm[j].x;
+            const dy = lm[i].y - lm[j].y;
+            const dz = lm[i].z - lm[j].z;
+            return Math.sqrt(dx*dx + dy*dy + dz*dz);
+        }
+
+        function detectGesture(lm) {
+            // Thumb Tip 4, Index Tip 8, Middle 12, Ring 16, Pinky 20
+            // PIP Joints: 6, 10, 14, 18
+            
+            const thumbTip = lm[4];
+            const indexTip = lm[8];
+            const pinchDist = distance(lm, 4, 8);
+
+            // Check if fingers are folded (Tip below PIP in y-axis? No, distance to palm base 0)
+            // Simplified: Distance tip to wrist(0) < PIP to wrist
+            const isFolded = (idx) => distance(lm, idx, 0) < distance(lm, idx-2, 0);
+
+            const middleFold = isFolded(12);
+            const ringFold = isFolded(16);
+            const pinkyFold = isFolded(20);
+            const indexFold = isFolded(8);
+
+            let newState = 'OPEN';
+
+            // FIST: All fingers folded (Index, Middle, Ring, Pinky)
+            if (indexFold && middleFold && ringFold && pinkyFold) {
+                newState = 'FIST';
+            }
+            // PINCH: Index close to thumb, others open or loose
+            else if (pinchDist < 0.05) {
+                newState = 'PINCH';
+            }
+            // POINT: Index open, others folded
+            else if (!indexFold && middleFold && ringFold && pinkyFold) {
+                newState = 'POINT'; // Not used heavily logic-wise, but good visual
+            }
+            
+            // State Change Logic
+            if (newState !== gestureState) {
+                // Debounce simple
+                gestureState = newState;
+                
+                // Trigger Logic
+                if (gestureState === 'PINCH') {
+                    // Start Grab handled in loop
+                } else if (gestureState === 'OPEN') {
+                    releaseCard();
+                } else if (gestureState === 'FIST') {
+                    confirmSelection();
+                }
+            }
+        }
+
+        // Initialize MediaPipe
+        const hands = new Hands({locateFile: (file) => {
+            return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+        }});
+        
+        hands.setOptions({
+            maxNumHands: 1,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
         });
+        
+        hands.onResults(onResults);
+
+        // Webcam CamUtils
+        const cameraUtils = new Camera(videoElement, {
+            onFrame: async () => {
+                await hands.send({image: videoElement});
+            },
+            width: 320,
+            height: 240
+        });
+
+        // Start Logic
+        async function startApp() {
+            initThree();
+            
+            try {
+                await cameraUtils.start();
+            } catch(e) {
+                console.warn("Camera failed or denied, switching to mouse mode.", e);
+                setMouseMode();
+                loading.style.display = 'none';
+                alert("无法访问摄像头，已自动降级为鼠标模式。");
+            }
+        }
+
+        // Mode Switching UI
+        const btnHand = document.getElementById('btn-hand');
+        const btnMouse = document.getElementById('btn-mouse');
+
+        function setMouseMode() {
+            interactionMode = 'MOUSE';
+            btnHand.classList.remove('active');
+            btnMouse.classList.add('active');
+            videoElement.pause();
+            document.getElementById('webcam-container').style.opacity = 0.3;
+        }
+
+        function setHandMode() {
+            interactionMode = 'HAND';
+            btnMouse.classList.remove('active');
+            btnHand.classList.add('active');
+            videoElement.play();
+            document.getElementById('webcam-container').style.opacity = 1;
+        }
+
+        btnMouse.addEventListener('click', setMouseMode);
+        btnHand.addEventListener('click', () => {
+            setHandMode();
+            // Re-trigger camera start if needed
+            cameraUtils.start().catch(e => {
+                alert("摄像头启动失败");
+                setMouseMode();
+            });
+        });
+
+        startApp();
 
     </script>
 </body>
