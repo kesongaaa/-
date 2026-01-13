@@ -3,10 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>WebGL Neon Racer: Curved Edition</title>
+    <title>WebGL Hand Gesture Racer - Obstacle Mode</title>
     <style>
-        /* 页面基础样式 */
-        body { margin: 0; overflow: hidden; background-color: #050011; font-family: 'Segoe UI', sans-serif; }
+        /* 页面基础样式 - 赛博朋克风格 */
+        body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Segoe UI', sans-serif; }
         
         #canvas-container { width: 100vw; height: 100vh; display: block; }
 
@@ -16,54 +16,41 @@
             display: flex; flex-direction: column; justify-content: space-between;
         }
 
+        /* 碰撞时的红屏闪烁效果 */
+        #damage-overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: radial-gradient(circle, transparent 50%, red 100%);
+            opacity: 0; transition: opacity 0.1s; pointer-events: none; z-index: 5;
+        }
+
         /* 顶部仪表盘 */
         .hud-top {
             padding: 20px;
             display: flex; justify-content: space-between; align-items: flex-start;
-            background: linear-gradient(to bottom, rgba(0,0,0,0.9), transparent);
+            background: linear-gradient(to bottom, rgba(0,0,0,0.8), transparent);
         }
 
-        .speed-box { text-align: right; color: #0ff; text-shadow: 0 0 15px #0ff; }
-        .speed-value { font-size: 60px; font-weight: 800; font-family: 'Courier New', monospace; letter-spacing: -2px; }
-        .speed-unit { font-size: 14px; color: #00f3ff; opacity: 0.8; }
+        .speed-box { text-align: right; color: #0ff; text-shadow: 0 0 10px #0ff; }
+        .speed-value { font-size: 60px; font-weight: bold; font-family: 'Courier New', monospace; }
+        .speed-unit { font-size: 20px; opacity: 0.8; }
 
-        .status-box { color: #fff; font-size: 14px; background: rgba(0, 20, 40, 0.6); padding: 12px; border-radius: 4px; border-left: 3px solid #0ff; backdrop-filter: blur(4px); }
-        .dot { width: 8px; height: 8px; border-radius: 50%; background: #444; margin-right: 8px; display: inline-block; vertical-align: middle; }
+        .status-box { color: #fff; font-size: 14px; background: rgba(0, 50, 100, 0.5); padding: 10px; border-radius: 8px; border: 1px solid #0ff; backdrop-filter: blur(4px); }
+        .status-item { margin-bottom: 5px; display: flex; align-items: center; }
+        .dot { width: 10px; height: 10px; border-radius: 50%; background: #333; margin-right: 8px; display: inline-block; }
         .dot.active { background: #0f0; box-shadow: 0 0 8px #0f0; }
+        .dot.error { background: #f00; }
 
-        /* 底部驾驶舱 UI */
-        .cockpit {
-            width: 100%; height: 25vh;
-            background: linear-gradient(to top, #000 20%, transparent);
-            position: relative;
-            display: flex; justify-content: center; align-items: center;
-        }
-        .steering-wheel-indicator {
-            width: 100px; height: 100px;
-            border: 3px solid rgba(0, 243, 255, 0.3); border-radius: 50%;
-            position: relative;
-            transition: transform 0.1s;
-        }
-        .steering-bar {
-            position: absolute; top: 50%; left: 10%; width: 80%; height: 2px; background: #0ff;
-            box-shadow: 0 0 10px #0ff;
-        }
-        .curve-indicator {
-            position: absolute; bottom: 80px; color: #d200ff; font-weight: bold; font-size: 20px; text-shadow: 0 0 5px #d200ff;
-            opacity: 0; transition: opacity 0.3s;
-        }
-
-        /* 摄像头预览 */
+        /* 摄像头小窗口 */
         #webcam-preview {
-            position: absolute; top: 20px; right: 20px;
+            position: absolute; bottom: 20px; right: 20px;
             width: 160px; height: 120px;
-            border: 1px solid #333; background: #000;
-            transform: scaleX(-1);
-            z-index: 10; opacity: 0.8;
-            border-radius: 4px;
+            border: 2px solid #333; background: #000;
+            transform: scaleX(-1); /* 镜像 */
+            z-index: 10; opacity: 0.7;
+            border-radius: 8px;
         }
 
-        /* 加载界面 */
+        /* 加载遮罩 */
         #loader {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: #000; z-index: 999;
@@ -71,18 +58,19 @@
             color: #0ff; transition: opacity 0.5s;
         }
         .spinner {
-            width: 40px; height: 40px; border: 4px solid #111; border-top: 4px solid #0ff;
-            border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 20px;
+            width: 50px; height: 50px; border: 5px solid #333; border-top: 5px solid #0ff;
+            border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 20px;
         }
         @keyframes spin { 100% { transform: rotate(360deg); } }
     </style>
 
-    <!-- 库文件 -->
+    <!-- 引入 MediaPipe -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
 
+    <!-- 引入 Three.js -->
     <script type="importmap">
         {
             "imports": {
@@ -96,8 +84,12 @@
 
     <div id="loader">
         <div class="spinner"></div>
-        <div style="font-size:14px; letter-spacing:1px;">SYSTEM BOOTING...</div>
+        <div>LOADING SYSTEM...</div>
+        <div style="font-size:12px; color:#666; margin-top:10px">请允许摄像头权限</div>
     </div>
+
+    <!-- 伤害闪烁层 -->
+    <div id="damage-overlay"></div>
 
     <div id="canvas-container"></div>
     <video id="webcam-preview" playsinline muted></video>
@@ -105,21 +97,16 @@
     <div id="ui-layer">
         <div class="hud-top">
             <div class="status-box">
-                <div><span class="dot" id="cam-dot"></span> VISUAL SENSOR</div>
-                <div style="margin-top:5px;"><span class="dot" id="hand-dot"></span> HAND TRACKING</div>
-                <div style="font-size:12px; color:#888; margin-top:8px;">
-                    Control: Tilt hand Left/Right
+                <div class="status-item"><span class="dot" id="cam-dot"></span> 摄像头信号</div>
+                <div class="status-item"><span class="dot" id="hand-dot"></span> 手势识别</div>
+                <div style="font-size:12px; color:#aaa; margin-top:5px;">
+                    单手左右倾斜 = 转向<br>
+                    <span style="color:#ff3333">注意避开红色障碍物！</span>
                 </div>
             </div>
             <div class="speed-box">
                 <div class="speed-value" id="speed-display">0</div>
                 <div class="speed-unit">KM/H</div>
-            </div>
-        </div>
-        <div class="cockpit">
-            <div class="curve-indicator" id="curve-warning">>>> TURN >>></div>
-            <div class="steering-wheel-indicator" id="steering-wheel">
-                <div class="steering-bar"></div>
             </div>
         </div>
     </div>
@@ -131,50 +118,40 @@
         // 1. 全局配置
         // =========================================
         const CONFIG = {
-            maxSpeed: 280,
-            acceleration: 0.6,
-            friction: 0.98,
-            steerSens: 0.08,
+            maxSpeed: 280,        
+            acceleration: 0.6,    
+            steeringSensitivity: 0.08, 
             roadWidth: 50,
-            colors: {
-                sky: 0x050011,
-                grid: 0x00f3ff,
-                ground: 0x0a0a0a
-            }
+            cameraHeight: 2.0
         };
 
         const STATE = {
-            speed: 0,           // 0 - maxSpeed
-            displaySpeed: 0,
-            steering: 0,        // -1 (Left) to 1 (Right)
+            speed: 0,
+            steering: 0,
             targetSteering: 0,
-            controlMode: 'keyboard', // 'keyboard' | 'hand'
-            
-            // 弯道系统状态
-            distance: 0,        // 总行驶距离
-            currentCurve: 0,    // 当前路段的曲率 (-1 左, 1 右, 0 直)
-            playerOffset: 0     // 玩家在道路横向的位置
+            controlMode: 'keyboard',
+            isHit: false // 是否发生碰撞
         };
 
         const UI = {
             loader: document.getElementById('loader'),
             speed: document.getElementById('speed-display'),
-            wheel: document.getElementById('steering-wheel'),
-            warning: document.getElementById('curve-warning'),
             camDot: document.getElementById('cam-dot'),
             handDot: document.getElementById('hand-dot'),
-            video: document.getElementById('webcam-preview')
+            video: document.getElementById('webcam-preview'),
+            damage: document.getElementById('damage-overlay')
         };
 
         // =========================================
-        // 2. Three.js 初始化
+        // 2. Three.js 场景
         // =========================================
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(CONFIG.colors.sky);
-        scene.fog = new THREE.FogExp2(CONFIG.colors.sky, 0.006); // 稍微稀薄一点的雾，为了看清远处的弯道
+        scene.background = new THREE.Color(0x020008);
+        scene.fog = new THREE.FogExp2(0x020008, 0.01); // 增加雾浓度，隐藏生成过程
 
-        const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000);
-        camera.position.set(0, 3, 0); // 这里的 position.x 将由 offset 控制
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 500);
+        camera.position.set(0, CONFIG.cameraHeight, 5);
+        camera.lookAt(0, CONFIG.cameraHeight, -20);
 
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
@@ -182,136 +159,160 @@
         document.getElementById('canvas-container').appendChild(renderer.domElement);
 
         // 灯光
-        scene.add(new THREE.AmbientLight(0xffffff, 0.8));
-        
-        // =========================================
-        // 3. 核心：弯曲道路 Shader
-        // =========================================
-        // 我们不使用普通贴图移动，而是使用 Shader 实时弯曲网格顶点
-        
-        const roadUniforms = {
-            uTime: { value: 0 },
-            uCurve: { value: 0 }, // 核心变量：控制弯曲程度
-            uColor: { value: new THREE.Color(CONFIG.colors.grid) },
-            uSpeedOffset: { value: 0 } // 纹理滚动
-        };
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+        scene.add(ambientLight);
+        // 主光源
+        const dirLight = new THREE.DirectionalLight(0x00f3ff, 1);
+        dirLight.position.set(20, 50, 20);
+        scene.add(dirLight);
+        // 红色警示光（照亮障碍物）
+        const redLight = new THREE.PointLight(0xff0000, 0.5, 50);
+        redLight.position.set(0, 5, -10);
+        scene.add(redLight);
 
-        const roadVertexShader = `
-            uniform float uCurve;
-            uniform float uSpeedOffset;
-            varying vec2 vUv;
-            varying float vDepth;
+        // --- 1. 道路 (网格地面) ---
+        function createGridTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 512; canvas.height = 512;
+            const ctx = canvas.getContext('2d');
+            
+            // 黑底
+            ctx.fillStyle = '#050505';
+            ctx.fillRect(0,0,512,512);
+            
+            // 亮青色边线
+            ctx.strokeStyle = '#00f3ff';
+            ctx.lineWidth = 6;
+            ctx.beginPath();
+            ctx.moveTo(0, 0); ctx.lineTo(0, 512);
+            ctx.moveTo(512, 0); ctx.lineTo(512, 512);
+            ctx.stroke();
 
-            void main() {
-                vUv = uv + vec2(0.0, -uSpeedOffset); // 纹理沿Y轴滚动
-                
-                vec3 pos = position;
-                
-                // --- 弯曲算法 ---
-                // 计算当前顶点距离相机的深度 (在 PlaneGeometry 中，Z 轴向下延伸，但旋转后是 -Z)
-                // 这里我们直接取 absolute z (假设路是平铺的)
-                float dist = abs(pos.y); // 因为 Plane 是横着的，旋转 -90度后，原始的 Y 变成了世界的 -Z 距离
-                
-                // 弯曲公式：x偏移 = 曲率 * 距离的平方
-                // 距离越远，偏移越大，形成弯曲视觉
-                float distortion = uCurve * dist * dist * 0.0005;
-                
-                pos.x += distortion;
-
-                vDepth = dist;
-                gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+            // 横向速度线
+            ctx.strokeStyle = 'rgba(0, 243, 255, 0.2)';
+            ctx.lineWidth = 2;
+            for(let i=0; i<512; i+=64) {
+                ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(512, i); ctx.stroke();
             }
-        `;
+            
+            const tex = new THREE.CanvasTexture(canvas);
+            tex.wrapS = THREE.RepeatWrapping;
+            tex.wrapT = THREE.RepeatWrapping;
+            tex.anisotropy = 16;
+            return tex;
+        }
 
-        const roadFragmentShader = `
-            uniform vec3 uColor;
-            varying vec2 vUv;
-            varying float vDepth;
-
-            void main() {
-                // 生成网格
-                float gridX = step(0.95, fract(vUv.x * 20.0)); // 20条车道线
-                float gridY = step(0.95, fract(vUv.y * 10.0)); // 横线
-                
-                // 道路边缘发光
-                float edge = smoothstep(0.4, 0.5, abs(vUv.x - 0.5));
-                
-                // 中间虚线
-                float centerLine = step(0.49, vUv.x) * step(vUv.x, 0.51) * step(0.5, fract(vUv.y * 5.0));
-
-                vec3 color = uColor * (gridX * 0.3 + gridY * 0.3 + centerLine);
-                color += uColor * edge * 2.0; // 边缘更亮
-
-                // 远处的淡出效果
-                float alpha = 1.0 - smoothstep(0.0, 800.0, vDepth);
-
-                gl_FragColor = vec4(color, alpha);
-            }
-        `;
-
-        // 创建高密度平面的路，以便 Shader 能平滑弯曲顶点
-        // 宽 100，长 1000，宽分段 20，长分段 200
-        const roadGeo = new THREE.PlaneGeometry(100, 1000, 20, 200);
-        // 旋转几何体，使其平铺在地面，且原点在近端
-        roadGeo.translate(0, 500, 0); // 将中心推远，让 camera 在 0 点刚好在路头
-        roadGeo.rotateX(-Math.PI / 2);
-
-        const roadMat = new THREE.ShaderMaterial({
-            uniforms: roadUniforms,
-            vertexShader: roadVertexShader,
-            fragmentShader: roadFragmentShader,
-            transparent: true,
-            side: THREE.DoubleSide
-        });
-
+        const roadTexture = createGridTexture();
+        const roadGeo = new THREE.PlaneGeometry(CONFIG.roadWidth, 1000);
+        const roadMat = new THREE.MeshBasicMaterial({ map: roadTexture });
         const road = new THREE.Mesh(roadGeo, roadMat);
+        road.rotation.x = -Math.PI / 2;
         scene.add(road);
 
-
-        // =========================================
-        // 4. 场景物体 (粒子星空)
-        // =========================================
-        // 简单的星空，随车漂移
-        const starsGeo = new THREE.BufferGeometry();
-        const starsCount = 2000;
-        const posArray = new Float32Array(starsCount * 3);
-        for(let i=0; i<starsCount*3; i++) {
-            posArray[i] = (Math.random() - 0.5) * 600;
+        // --- 2. 路边建筑 (装饰) ---
+        const buildings = [];
+        const buildGeo = new THREE.BoxGeometry(2, 1, 2);
+        
+        for (let i = 0; i < 30; i++) {
+            const mat = new THREE.MeshPhongMaterial({ 
+                color: 0x110033, 
+                emissive: 0x220055,
+                shininess: 100
+            });
+            const mesh = new THREE.Mesh(buildGeo, mat);
+            resetObj(mesh, -i * 15, true);
+            scene.add(mesh);
+            buildings.push(mesh);
         }
-        starsGeo.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
-        const starsMat = new THREE.PointsMaterial({color: 0xffffff, size: 0.8, transparent: true, opacity: 0.5});
-        const starField = new THREE.Points(starsGeo, starsMat);
-        scene.add(starField);
+
+        // --- 3. 障碍物 (危险物体) ---
+        const obstacles = [];
+        // 使用八面体看起来更有攻击性
+        const obstacleGeo = new THREE.OctahedronGeometry(1.5, 0); 
+        const obstacleMat = new THREE.MeshPhongMaterial({ 
+            color: 0xff0000, 
+            emissive: 0x550000,
+            shininess: 50,
+            wireframe: false
+        });
+        
+        // 线框外壳，增加科技感
+        const wireGeo = new THREE.WireframeGeometry(obstacleGeo);
+        const wireMat = new THREE.LineBasicMaterial({ color: 0xff3333 });
+
+        for (let i = 0; i < 10; i++) {
+            const group = new THREE.Group();
+            
+            const core = new THREE.Mesh(obstacleGeo, obstacleMat);
+            const wire = new THREE.LineSegments(wireGeo, wireMat);
+            
+            group.add(core);
+            group.add(wire);
+            
+            // 初始放置在很远的地方，避免开局就撞
+            resetObj(group, -100 - i * 30, false); 
+            
+            scene.add(group);
+            obstacles.push(group);
+        }
+
+        // 通用重置函数
+        function resetObj(obj, zPos, isBuilding = false) {
+            obj.position.z = zPos;
+            
+            if (isBuilding) {
+                // 建筑在路两边
+                const side = Math.random() > 0.5 ? 1 : -1;
+                obj.position.x = side * (CONFIG.roadWidth / 2 + 5 + Math.random() * 10);
+                obj.scale.set(1, 5 + Math.random() * 20, 1); // 随机高度
+                obj.position.y = obj.scale.y / 2 - 2;
+            } else {
+                // 障碍物在路中间，随机 X
+                // 留出一点边距，避免完全不可躲避
+                const safeWidth = CONFIG.roadWidth - 10;
+                obj.position.x = (Math.random() - 0.5) * safeWidth;
+                obj.position.y = 1.5; // 悬浮
+                
+                // 随机旋转增加动感
+                obj.rotation.set(Math.random(), Math.random(), Math.random());
+            }
+        }
+
+        // --- 4. 粒子星空 ---
+        const starGeo = new THREE.BufferGeometry();
+        const starPos = [];
+        for(let i=0; i<1500; i++) {
+            starPos.push((Math.random()-0.5)*400, (Math.random()-0.5)*200, (Math.random()-0.5)*400);
+        }
+        starGeo.setAttribute('position', new THREE.Float32BufferAttribute(starPos, 3));
+        const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.4 });
+        const stars = new THREE.Points(starGeo, starMat);
+        scene.add(stars);
 
 
         // =========================================
-        // 5. 逻辑控制与物理
+        // 3. 游戏逻辑
         // =========================================
         
-        // 键盘控制
         const keys = { left: false, right: false };
         window.addEventListener('keydown', (e) => {
-            if(e.code === 'ArrowLeft' || e.key === 'a') keys.left = true;
-            if(e.code === 'ArrowRight' || e.key === 'd') keys.right = true;
+            if(e.key === 'ArrowLeft') keys.left = true;
+            if(e.key === 'ArrowRight') keys.right = true;
         });
         window.addEventListener('keyup', (e) => {
-            if(e.code === 'ArrowLeft' || e.key === 'a') keys.left = false;
-            if(e.code === 'ArrowRight' || e.key === 'd') keys.right = false;
+            if(e.key === 'ArrowLeft') keys.left = false;
+            if(e.key === 'ArrowRight') keys.right = false;
         });
 
-        // 弯道生成函数 (使用简单的正弦波叠加)
-        function getTrackCurve(zPos) {
-            // zPos 是行驶距离
-            // 基础大弯 + 快速小弯
-            // 结果范围约 -1 (左) 到 1 (右)
-            const baseCurve = Math.sin(zPos * 0.001); // 长直道/长弯道
-            const sharpCurve = Math.sin(zPos * 0.003) * 0.5; // 急弯
-            
-            // 只有当 baseCurve 较大时才加入 sharpCurve，制造复杂路况
-            let total = baseCurve; 
-            if (Math.abs(baseCurve) > 0.5) total += sharpCurve;
-            
-            return total;
+        // 碰撞闪烁函数
+        function triggerDamage() {
+            if (STATE.isHit) return; // 避免连续触发
+            STATE.isHit = true;
+            UI.damage.style.opacity = '0.8';
+            setTimeout(() => {
+                UI.damage.style.opacity = '0';
+                STATE.isHit = false;
+            }, 300);
         }
 
         function updatePhysics(dt) {
@@ -325,86 +326,80 @@
             // 2. 速度处理
             if (STATE.speed < CONFIG.maxSpeed) {
                 STATE.speed += CONFIG.acceleration;
-            } else {
-                STATE.speed = CONFIG.maxSpeed;
             }
+            
+            // 3. 转向平滑
+            STATE.steering += (STATE.targetSteering - STATE.steering) * CONFIG.steeringSensitivity;
 
-            // 撞墙检测与惩罚
-            const trackWidthLimit = CONFIG.roadWidth / 2 - 2;
-            if (Math.abs(STATE.playerOffset) > trackWidthLimit) {
-                STATE.speed *= 0.95; // 减速
-                STATE.playerOffset = Math.sign(STATE.playerOffset) * trackWidthLimit; // 限制位置
-                // 屏幕震动效果可在此添加
+            // 4. 计算移动距离
+            // 这个 moveDist 是场景物体向相机移动的距离（相对运动）
+            const moveDist = (STATE.speed / 10) * dt * 10;
+            
+            // 纹理滚动
+            roadTexture.offset.y -= moveDist * 0.05;
+
+            // --- 物体移动与回收 ---
+            
+            // 移动建筑
+            buildings.forEach(b => {
+                b.position.z += moveDist;
+                if(b.position.z > 10) resetObj(b, -200 - Math.random() * 50, true);
+            });
+
+            // 移动障碍物 + 碰撞检测
+            obstacles.forEach(obs => {
+                obs.position.z += moveDist;
+                // 自转
+                obs.rotation.x += 0.02;
+                obs.rotation.y += 0.02;
+
+                // 碰撞检测逻辑
+                // 障碍物 Z 轴接近相机 (相机在 5, 物体到 5 附近)
+                // 并且 X 轴距离足够近
+                if (Math.abs(obs.position.z - camera.position.z) < 2.5) {
+                    const distX = Math.abs(obs.position.x - camera.position.x);
+                    if (distX < 2.5) { // 碰撞半径
+                        // 撞到了！
+                        triggerDamage();
+                        STATE.speed = STATE.speed * 0.4; // 速度减半惩罚
+                        // 撞完后为了防止连续判定，把物体移走
+                        obs.position.z = 20; 
+                    }
+                }
+
+                // 回收
+                if(obs.position.z > 10) resetObj(obs, -300 - Math.random() * 100, false);
+            });
+
+            // 移动粒子
+            const sPos = stars.geometry.attributes.position.array;
+            for(let i=2; i<sPos.length; i+=3) {
+                sPos[i] += moveDist * 0.5;
+                if(sPos[i] > 20) sPos[i] = -300;
             }
+            stars.geometry.attributes.position.needsUpdate = true;
 
-            // 3. 移动距离
-            // 转换为场景单位
-            const moveDist = (STATE.speed / 20) * dt * 10;
-            STATE.distance += moveDist;
+            // 5. 玩家/相机横向移动
+            const lateralSpeed = STATE.speed * 0.12 * dt;
+            camera.position.x += STATE.steering * lateralSpeed;
 
-            // 4. 弯道逻辑
-            // 获取当前应该的曲率
-            const targetCurve = getTrackCurve(STATE.distance) * 2.0; // 放大系数
-            // 平滑过渡当前曲率 (Lerp)
-            STATE.currentCurve += (targetCurve - STATE.currentCurve) * 0.02;
+            // 边界限制
+            const limit = CONFIG.roadWidth / 2 - 2;
+            if (camera.position.x > limit) { camera.position.x = limit; STATE.speed *= 0.98; }
+            if (camera.position.x < -limit) { camera.position.x = -limit; STATE.speed *= 0.98; }
 
-            // 将曲率传给 Shader (控制视觉弯曲)
-            roadUniforms.uCurve.value = STATE.currentCurve;
-            // 滚动纹理
-            roadUniforms.uSpeedOffset.value += moveDist * 0.005;
+            // 6. 相机动态效果 (Roll & FOV)
+            camera.rotation.z = -STATE.steering * 0.2; // 转向倾斜
+            camera.fov = 75 + (STATE.speed / CONFIG.maxSpeed) * 15; // 极速拉伸视野
+            camera.updateProjectionMatrix();
 
-            // 5. 车辆物理 (转向 + 离心力)
-            // 转向平滑
-            STATE.steering += (STATE.targetSteering - STATE.steering) * CONFIG.steerSens;
-
-            // 玩家横向移动 = 主动转向 - 道路弯曲带来的离心力
-            // 离心力：如果路向右弯 (curve > 0)，车如果不动，相对路来说就是向左偏
-            const lateralMove = (STATE.steering * 1.2) * moveDist * 0.15;
-            const centrifugalForce = STATE.currentCurve * moveDist * 0.15; 
-            
-            STATE.playerOffset += lateralMove;
-            STATE.playerOffset -= centrifugalForce; // 必须反向抵消离心力才能保持在路中间
-
-            // 6. 相机更新
-            // 相机 X 位置即玩家横向位置
-            camera.position.x = STATE.playerOffset;
-            
-            // 相机旋转：结合玩家转向和道路弯曲
-            // 玩家转向时，镜头稍微偏转
-            // 道路弯曲时，镜头也要看向弯道深处 (Look ahead)
-            const lookAheadAngle = -STATE.currentCurve * 0.5; // 看向弯道
-            const steerAngle = -STATE.steering * 0.1;
-            
-            camera.rotation.z = steerAngle; // 侧倾 (Roll)
-            camera.rotation.y = lookAheadAngle + steerAngle * 0.5; // 偏航 (Yaw)
-
-            // 粒子更新 (制造速度感)
-            const starsPos = starField.geometry.attributes.position.array;
-            for(let i=2; i<starsPos.length; i+=3) {
-                starsPos[i] += moveDist * 1.5;
-                if(starsPos[i] > 50) starsPos[i] = -550; // 循环
-            }
-            starField.geometry.attributes.position.needsUpdate = true;
-            // 粒子整体稍微跟随弯道旋转，增加沉浸感
-            starField.rotation.y = lookAheadAngle * 0.2;
-
-            // UI 更新
-            STATE.displaySpeed = Math.floor(STATE.speed);
-            UI.speed.innerText = STATE.displaySpeed;
-            UI.wheel.style.transform = `rotate(${STATE.steering * 90}deg)`;
-            
-            // 弯道提示
-            if (Math.abs(STATE.currentCurve) > 0.8) {
-                UI.warning.style.opacity = '1';
-                UI.warning.innerText = STATE.currentCurve > 0 ? ">>> RIGHT TURN >>>" : "<<< LEFT TURN <<<";
-                UI.warning.style.color = STATE.currentCurve > 0 ? "#00f3ff" : "#d200ff";
-            } else {
-                UI.warning.style.opacity = '0';
-            }
+            // 7. 更新UI
+            UI.speed.innerText = Math.floor(STATE.speed);
         }
 
+
         // =========================================
-        // 6. 手势识别 (MediaPipe)
+        // 4. MediaPipe 手势
         // =========================================
         const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
         
@@ -419,17 +414,18 @@
             if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
                 UI.handDot.classList.add('active');
                 STATE.controlMode = 'hand';
-                const landmarks = results.multiHandLandmarks[0];
-                const wrist = landmarks[0];
-                const middleFinger = landmarks[9];
                 
-                // 计算 x 差值 (-1 ~ 1)
-                const dx = middleFinger.x - wrist.x;
+                const lm = results.multiHandLandmarks[0];
+                const wrist = lm[0];
+                const middle = lm[9];
                 
-                // 放大并反向 (符合直觉：手往左倒 -> 车往左转)
-                // MediaPipe 镜像后，手往左倒 dx 为负
-                let steer = dx * 5.0; 
-                STATE.targetSteering = Math.max(-1, Math.min(1, -steer)); 
+                // 计算倾斜
+                const dx = middle.x - wrist.x; 
+                // dx > 0: 像右倒; dx < 0: 向左倒 (镜像后)
+                
+                // 映射灵敏度
+                const rawSteer = -dx * 6.0; // 负号因为我们要反向控制(镜像)
+                STATE.targetSteering = Math.max(-1, Math.min(1, rawSteer));
             } else {
                 UI.handDot.classList.remove('active');
                 STATE.controlMode = 'keyboard';
@@ -437,29 +433,31 @@
         });
 
         const cameraUtils = new Camera(UI.video, {
-            onFrame: async () => { await hands.send({image: UI.video}); },
+            onFrame: async () => await hands.send({image: UI.video}),
             width: 320, height: 240
         });
 
-        cameraUtils.start().then(() => {
-            UI.camDot.classList.add('active');
-            UI.loader.style.opacity = '0';
-            setTimeout(() => UI.loader.style.display = 'none', 500);
-        });
+        cameraUtils.start()
+            .then(() => {
+                UI.camDot.classList.add('active');
+                UI.loader.style.opacity = 0;
+                setTimeout(() => UI.loader.style.display = 'none', 500);
+            })
+            .catch(() => {
+                UI.camDot.classList.add('error');
+                UI.loader.innerHTML = "摄像头启动失败 (需要HTTPS)";
+            });
 
         // =========================================
-        // 7. 渲染循环
+        // 5. 循环
         // =========================================
         const clock = new THREE.Clock();
-
         function animate() {
             requestAnimationFrame(animate);
-            const dt = clock.getDelta();
-            roadUniforms.uTime.value += dt;
-            updatePhysics(dt);
+            updatePhysics(clock.getDelta());
             renderer.render(scene, camera);
         }
-
+        
         window.addEventListener('resize', () => {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
@@ -467,7 +465,6 @@
         });
 
         animate();
-
     </script>
 </body>
 </html>
