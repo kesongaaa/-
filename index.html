@@ -1,28 +1,38 @@
 <!DOCTYPE html>
-<html lang="zh">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Arcane Tarot Ritual</title>
+    <title>The True Tarot</title>
     <style>
-        body { margin: 0; overflow: hidden; background-color: #020202; font-family: 'Times New Roman', serif; }
+        body { margin: 0; overflow: hidden; background-color: #000000; font-family: 'Georgia', serif; }
         canvas { display: block; }
+        
         #loader {
             position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            color: #6b5a38; font-size: 16px; letter-spacing: 4px; pointer-events: none;
-            text-transform: uppercase; opacity: 0.8; transition: opacity 1s;
+            color: #cba156; font-size: 11px; letter-spacing: 12px; pointer-events: none;
+            text-transform: uppercase; transition: opacity 1.5s; opacity: 1; 
+            text-shadow: 0 0 40px rgba(200, 160, 80, 0.6);
+            font-weight: 300; border-bottom: 1px solid rgba(140, 123, 80, 0.2);
+            padding-bottom: 20px; z-index: 10;
         }
-        #ui-layer {
+        #ui-help {
             position: absolute; bottom: 40px; width: 100%; text-align: center;
-            color: #444; font-size: 12px; pointer-events: none; letter-spacing: 2px;
-            text-shadow: 0 2px 4px rgba(0,0,0,0.9);
+            color: #6a7a8a; font-size: 9px; pointer-events: none; letter-spacing: 3px;
+            opacity: 0.5; font-family: sans-serif; mix-blend-mode: screen; z-index: 10;
         }
-        .highlight { color: #8a7342; font-weight: bold; }
-        /* 隐藏视频流，保持沉浸感 */
-        #video-input { display: none; }
+        
+        #upload-btn {
+            position: absolute; top: 20px; left: 20px; z-index: 20;
+            background: rgba(8, 8, 10, 0.5); border: 1px solid #334455; color: #778899;
+            padding: 8px 12px; font-size: 10px; letter-spacing: 1px; cursor: pointer;
+            text-transform: uppercase; transition: all 0.4s; backdrop-filter: blur(8px);
+        }
+        #upload-btn:hover { border-color: #cba156; color: #cba156; background: rgba(20, 20, 25, 0.8); }
+        #file-input { display: none; }
+        #video-feed { display: none; }
     </style>
-
-    <!-- 依赖库 -->
+    <!-- Three.js & Plugins -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
     <script src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
@@ -31,642 +41,500 @@
     <script src="https://unpkg.com/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
     <script src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
 </head>
 <body>
 
-    <div id="loader">Summoning The Circle...</div>
-    <video id="video-input" playsinline></video>
-    <div id="ui-layer">
-        <span class="highlight">👋 挥动</span> 旋转 &nbsp;•&nbsp; 
-        <span class="highlight">☝️ 指向</span> 凝视 &nbsp;•&nbsp; 
-        <span class="highlight">👌 捏合(保持)</span> 抽取 &nbsp;•&nbsp; 
-        <span class="highlight">✊ 握拳</span> 释放
+    <div id="loader">REVEALING ARCANA...</div>
+    <video id="video-feed" playsinline></video>
+    <div id="ui-help">
+        OPEN: ORBIT • POINT: HALO • PINCH: DRAW • FIST: DISSOLVE
     </div>
+
+    <button id="upload-btn" onclick="document.getElementById('file-input').click()">+ Custom Card Back</button>
+    <input type="file" id="file-input" accept="image/*">
 
 <script>
 /**
  * ============================================================================
- * 配置与常量 (降噪、克制)
+ * 0. CONFIGURATION
  * ============================================================================
  */
 const CONFIG = {
-    cardCount: 22,
-    radius: 7.5,
-    cardW: 1.4,
-    cardH: 2.35,
-    bloomStrength: 0.8, // 降低 Bloom，柔和
-    bloomRadius: 0.8,
-    bloomThreshold: 0.15,
-    friction: 0.95,     // 旋转阻尼
-    hoverDrag: 0.90,    // 指向时的强阻尼（模拟手指压在转盘上）
-    pinchThresh: 0.05,
-    pinchTime: 300,     // ms，捏合必须持续的时间
-    goldColor: 0x8a7342, // 暗金
-    lightColor: 0xffaa55 // 烛光
+    bgColor: 0x000000,
+    radius: 7.5, cardW: 1.45, cardH: 2.35, tiltAngle: -0.06,
+    rotFriction: 0.96, brakeFriction: 0.88, pinchThresh: 0.05, pinchTime: 150,
+    dispersionTime: 3.2, pCount: 15000, 
+    
+    // Palette
+    colGold: '#cba156', colDarkGold: '#7a6030',
+    colInk: '#0b0b0d', colPaper: '#e3dac9',
+    
+    // Galaxy Colors
+    colStarA: 0xeef0ff, // Core White
+    colStarB: 0x224488, // Deep Blue
+    colStarC: 0x110822  // Void Purple
 };
 
-// 状态枚举 (互斥)
-const MODES = {
-    ORBIT: 0,      // 自由/受力旋转
-    BRAKING: 1,    // 手指指向中，正在艰难减速
-    HOVER: 2,      // 几乎静止，高亮某张牌，等待选择
-    LOCKED: 3,     // 已锁定，准备抽牌 (捏合成功)
-    REVEAL: 4,     // 牌已抽出，展示中
-    DISPERSE: 5,   // 粒子消散中
-    REBALANCE: 6   // 补位动画中
-};
-
-const STATE = {
-    mode: MODES.ORBIT,
-    rotVel: 0.002,      // 初始微动
-    handX: 0, handY: 0, // 平滑后的手部坐标
-    rawHandX: 0, rawHandY: 0,
-    isHandActive: false,
-    hoverTarget: null,  // 当前悬停的 Mesh
-    selectedCard: null, // 被抽出的 Mesh
-    pinchStart: 0,      // 捏合开始时间戳
-    cards: [],          // 活跃卡牌数组
-    gapAngle: 0         // 用于补位计算
-};
+const MODE = { IDLE: 'IDLE', SCROLL: 'SCROLL', BRAKING: 'BRAKING', HOVER: 'HOVER', DRAWING: 'DRAWING', REVEAL_PAUSE: 'REVEAL_PAUSE', REVEAL_FLOAT: 'REVEAL_FLOAT', RETURNING: 'RETURNING', DISPERSE: 'DISPERSE', REBALANCE: 'REBALANCE' };
+const STATE = { mode: MODE.IDLE, rotVel: 0.0001, hand: { x: 0, y: 0, active: false, gesture: 'NONE' }, rawHand: { x: 0, y: 0 }, hoverTarget: null, activeCard: null, activeCardTexture: null, pinchStart: 0, cards: [] };
 
 // ============================================================================
-// 1. 材质与纹理 (暗黑仪式感)
+// 1. TEXTURE ENGINE
 // ============================================================================
 
-// 卡背：深色、低对比度、神秘符号
-function createBackTexture() {
-    const cvs = document.createElement('canvas');
-    cvs.width = 512; cvs.height = 800;
+const textureLoader = new THREE.TextureLoader();
+
+// A. SOFT STAR
+function createSoftCircleTexture() {
+    const cvs = document.createElement('canvas'); cvs.width=32; cvs.height=32;
     const ctx = cvs.getContext('2d');
+    const g = ctx.createRadialGradient(16,16,0, 16,16,16);
+    g.addColorStop(0, 'rgba(255,255,255,1)');
+    g.addColorStop(0.4, 'rgba(255,255,255,0.2)');
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g; ctx.fillRect(0,0,32,32);
+    return new THREE.CanvasTexture(cvs);
+}
+const texSoftCircle = createSoftCircleTexture();
+
+// B. HALO
+function createHaloTexture() {
+    const cvs = document.createElement('canvas'); cvs.width=256; cvs.height=256;
+    const ctx = cvs.getContext('2d');
+    ctx.shadowColor = "white"; ctx.shadowBlur = 60; ctx.fillStyle = "rgba(255,255,255,1)";
+    ctx.fillRect(50, 50, 156, 156);
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.shadowBlur = 0; ctx.fillRect(60, 60, 136, 136);
+    return new THREE.CanvasTexture(cvs);
+}
+const texHalo = createHaloTexture();
+
+// C. CARD BACK (Default High-Res)
+function createDefaultBackTexture() {
+    const cvs = document.createElement('canvas'); cvs.width=512; cvs.height=820;
+    const ctx = cvs.getContext('2d'); const w=512, h=820, cx=w/2, cy=h/2;
     
-    // 极暗背景
-    ctx.fillStyle = '#08050a';
-    ctx.fillRect(0,0,512,800);
-    
-    // 暗纹
-    ctx.strokeStyle = '#2a2215';
-    ctx.lineWidth = 2;
-    for(let i=0; i<20; i++) {
-        ctx.beginPath();
-        ctx.arc(256, 400, 30 + i*20, 0, Math.PI*2);
-        ctx.stroke();
+    // Base
+    ctx.fillStyle = CONFIG.colInk; ctx.fillRect(0,0,w,h);
+    // Noise
+    const id = ctx.getImageData(0,0,w,h);
+    for(let i=0; i<id.data.length; i+=4) {
+        const n = (Math.random()-0.5)*20;
+        id.data[i]+=n; id.data[i+1]+=n; id.data[i+2]+=n;
     }
+    ctx.putImageData(id,0,0);
     
-    // 金色边框 (暗)
-    ctx.strokeStyle = '#5c4d2e';
-    ctx.lineWidth = 12;
-    ctx.strokeRect(20,20,472,760);
-
-    // 噪点
-    ctx.fillStyle = 'rgba(0,0,0,0.6)';
-    ctx.fillRect(0,0,512,800);
-
-    return new THREE.CanvasTexture(cvs);
-}
-
-// 卡面：羊皮纸、抽象、不发光
-function createFrontTexture(idx) {
-    const cvs = document.createElement('canvas');
-    cvs.width = 512; cvs.height = 800;
-    const ctx = cvs.getContext('2d');
+    // Art
+    ctx.strokeStyle = CONFIG.colGold; ctx.fillStyle = CONFIG.colGold; ctx.lineWidth = 2;
+    ctx.strokeRect(20,20,w-40,h-40); ctx.lineWidth = 1; ctx.strokeRect(30,30,w-60,h-60);
     
-    // 羊皮纸
-    ctx.fillStyle = '#dcd3c3';
-    ctx.fillRect(0,0,512,800);
-    // 烧焦边缘
-    const g = ctx.createRadialGradient(256,400,200,256,400,600);
-    g.addColorStop(0, 'rgba(0,0,0,0)');
-    g.addColorStop(1, 'rgba(40,30,10,0.8)');
-    ctx.fillStyle = g;
-    ctx.fillRect(0,0,512,800);
-
-    // 图腾
-    ctx.translate(256,400);
-    ctx.strokeStyle = '#111';
-    ctx.lineWidth = 6;
-    ctx.beginPath();
-    const sides = 3 + (idx % 5);
-    for(let i=0; i<=sides; i++) {
-        const a = (i/sides)*Math.PI*2;
-        ctx.lineTo(Math.cos(a)*100, Math.sin(a)*100);
+    ctx.save(); ctx.translate(cx, cy);
+    ctx.lineWidth = 1;
+    for(let i=0; i<60; i++) {
+        const a = (i/60)*Math.PI*2;
+        ctx.beginPath(); ctx.moveTo(Math.cos(a)*80, Math.sin(a)*80); ctx.lineTo(Math.cos(a)*140, Math.sin(a)*140); ctx.stroke();
     }
-    ctx.stroke();
+    ctx.beginPath(); ctx.arc(0,0,70,0,Math.PI*2); ctx.fillStyle='#080808'; ctx.fill(); ctx.lineWidth=2; ctx.stroke();
+    ctx.beginPath(); ctx.arc(20, -10, 60, 0, Math.PI*2); ctx.fillStyle=CONFIG.colDarkGold; ctx.fill();
+    ctx.restore();
+    return new THREE.CanvasTexture(cvs);
+}
+let texBack = createDefaultBackTexture();
+
+// D. CARD FRONT (REAL TAROT IMAGES)
+// Mapping index to Rider-Waite filenames
+const RWS_MAP = [
+    'm00', 'm01', 'm02', 'm03', 'm04', 'm05', 'm06', 'm07', 'm08', 'm09', 
+    'm10', 'm11', 'm12', 'm13', 'm14', 'm15', 'm16', 'm17', 'm18', 'm19', 'm20', 'm21'
+];
+
+function getRealTarotTexture(index) {
+    const filename = RWS_MAP[index % RWS_MAP.length];
+    const url = `https://raw.githubusercontent.com/t79/tarot-deck/master/img/${filename}.jpg`;
     
-    return new THREE.CanvasTexture(cvs);
-}
-
-// 粒子纹理：金色粉尘
-function createDustTexture() {
-    const cvs = document.createElement('canvas');
-    cvs.width = 64; cvs.height = 64;
+    // Create a placeholder canvas first
+    const cvs = document.createElement('canvas'); 
+    cvs.width = 512; cvs.height = 820;
     const ctx = cvs.getContext('2d');
-    const g = ctx.createRadialGradient(32,32,0,32,32,32);
-    g.addColorStop(0, 'rgba(200, 160, 80, 1)'); // 核心亮
-    g.addColorStop(1, 'rgba(200, 160, 80, 0)'); // 边缘透
-    ctx.fillStyle = g;
-    ctx.fillRect(0,0,64,64);
-    return new THREE.CanvasTexture(cvs);
+    
+    // Draw base parchment while loading
+    ctx.fillStyle = CONFIG.colPaper; ctx.fillRect(0,0,512,820);
+    ctx.strokeStyle = '#1a1a1a'; ctx.lineWidth = 5; ctx.strokeRect(20,20,472,780);
+    
+    const tex = new THREE.CanvasTexture(cvs);
+    
+    // Load Real Image
+    const img = new Image();
+    img.crossOrigin = "Anonymous";
+    img.onload = () => {
+        // Draw image onto canvas with "High End" filter
+        ctx.drawImage(img, 0, 0, 512, 820);
+        
+        // Apply "Vintage Gold" Filter
+        ctx.globalCompositeOperation = 'multiply';
+        ctx.fillStyle = 'rgba(60, 40, 20, 0.3)'; // Sepia tint
+        ctx.fillRect(0,0,512,820);
+        
+        // Add Vignette
+        ctx.globalCompositeOperation = 'source-over';
+        const g = ctx.createRadialGradient(256, 410, 200, 256, 410, 600);
+        g.addColorStop(0, 'rgba(0,0,0,0)');
+        g.addColorStop(1, 'rgba(20,10,5,0.6)');
+        ctx.fillStyle = g;
+        ctx.fillRect(0,0,512,820);
+        
+        // Add Gold Border Overlay
+        ctx.strokeStyle = CONFIG.colGold; ctx.lineWidth = 8;
+        ctx.strokeRect(10,10,492,800);
+        
+        tex.needsUpdate = true;
+    };
+    img.src = url;
+    
+    return tex;
 }
 
 // ============================================================================
-// 2. 场景搭建
+// 2. SCENE SETUP
 // ============================================================================
-const scene = new THREE.Scene();
-scene.fog = new THREE.FogExp2(0x020202, 0.04); // 浓雾
+const scene = new THREE.Scene(); scene.background = new THREE.Color(CONFIG.bgColor);
+scene.fog = new THREE.FogExp2(CONFIG.bgColor, 0.005);
 
-const camera = new THREE.PerspectiveCamera(50, window.innerWidth/window.innerHeight, 0.1, 100);
-camera.position.set(0, 0, 0.1); // 位于圆心
+const camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.1, 500); 
+camera.position.set(0, 0, 0.1); 
 
-const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+const renderer = new THREE.WebGLRenderer({ antialias: true }); 
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMapping = THREE.ACESFilmicToneMapping; 
+renderer.toneMappingExposure = 1.0;
 document.body.appendChild(renderer.domElement);
 
-// 灯光：克制、点光源
-const candleLight = new THREE.PointLight(CONFIG.lightColor, 1.2, 25);
-candleLight.position.set(0, 2, 0);
-scene.add(candleLight);
+// --- GALAXY GROUP (Z=-12) ---
+const galaxyGroup = new THREE.Group();
+galaxyGroup.position.z = -12; 
+galaxyGroup.rotation.x = Math.PI * 0.4; 
+galaxyGroup.rotation.z = Math.PI * 0.1;
+scene.add(galaxyGroup);
 
-const ambient = new THREE.AmbientLight(0x223344, 0.3); // 冷色环境光对比
-scene.add(ambient);
+// --- STARS ---
+function createHeroStars() {
+    const count = 3500;
+    const geo = new THREE.BufferGeometry();
+    const pos = [];
+    const colors = [];
+    const sizes = [];
 
-// 牌组容器
-const ringGroup = new THREE.Group();
-ringGroup.position.y = -1.2; 
-scene.add(ringGroup);
+    for(let i=0; i<count; i++) {
+        const radius = Math.random() * 200;
+        const spin = radius * 1.5;
+        const branches = 3;
+        const branchAngle = (i % branches) / branches * Math.PI * 2;
+        
+        const x = Math.cos(branchAngle + spin) * radius + (Math.random()-0.5)*radius*0.6;
+        const y = (Math.random()-0.5) * 20;
+        const z = Math.sin(branchAngle + spin) * radius + (Math.random()-0.5)*radius*0.6;
+        pos.push(x, y, z);
 
-// 创建卡牌
-const geo = new THREE.BoxGeometry(CONFIG.cardW, CONFIG.cardH, 0.04);
-const backTex = createBackTexture();
-const matSide = new THREE.MeshBasicMaterial({ color: 0x111111 });
-const matBack = new THREE.MeshStandardMaterial({ 
-    map: backTex, roughness: 0.7, metalness: 0.1 
+        const c = new THREE.Color();
+        const r = Math.random();
+        if (r > 0.3) c.setHex(CONFIG.colStarA); 
+        else if (r > 0.15) c.setHex(CONFIG.colStarB); 
+        else c.setHex(CONFIG.colStarC); 
+        colors.push(c.r, c.g, c.b);
+        sizes.push(Math.random() * 0.5 + 0.2); 
+    }
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+    geo.setAttribute('size', new THREE.Float32BufferAttribute(sizes, 1));
+
+    const mat = new THREE.ShaderMaterial({
+        uniforms: { uTime: { value: 0 }, uTex: { value: texSoftCircle } },
+        vertexShader: `
+            uniform float uTime; attribute float size; attribute vec3 color; varying vec3 vColor;
+            void main() {
+                vColor = color;
+                vec3 p = position;
+                vec4 mv = modelViewMatrix * vec4(p, 1.0);
+                float twinkle = 0.85 + 0.3 * sin(uTime * 1.5 + p.x * 0.1);
+                gl_PointSize = size * (300.0 / -mv.z) * twinkle;
+                gl_Position = projectionMatrix * mv;
+            }
+        `,
+        fragmentShader: `
+            uniform sampler2D uTex; varying vec3 vColor;
+            void main() {
+                vec4 tex = texture2D(uTex, gl_PointCoord);
+                if(tex.a < 0.1) discard;
+                gl_FragColor = vec4(vColor, tex.a);
+            }
+        `,
+        transparent: true, depthWrite: false, blending: THREE.AdditiveBlending
+    });
+    return new THREE.Points(geo, mat);
+}
+const heroStars = createHeroStars();
+galaxyGroup.add(heroStars);
+
+// --- DUST ---
+function createGalaxyDust() {
+    const count = 50000; 
+    const geo = new THREE.BufferGeometry();
+    const pos = [];
+    const colors = [];
+    for(let i=0; i<count; i++) {
+        const radius = Math.random() * 220;
+        const spin = radius * 1.5;
+        const angle = (i % 3)/3 * Math.PI * 2;
+        const x = Math.cos(angle + spin) * radius + (Math.random()-0.5)*radius*0.8;
+        const y = (Math.random()-0.5) * 40;
+        const z = Math.sin(angle + spin) * radius + (Math.random()-0.5)*radius*0.8;
+        pos.push(x, y, z);
+        const c = new THREE.Color(CONFIG.colStarB);
+        c.multiplyScalar(0.5); 
+        colors.push(c.r, c.g, c.b);
+    }
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+    const mat = new THREE.PointsMaterial({
+        map: texSoftCircle, size: 0.12, vertexColors: true,
+        transparent: true, opacity: 0.2, depthWrite: false, blending: THREE.AdditiveBlending
+    });
+    return new THREE.Points(geo, mat);
+}
+const galaxyDust = createGalaxyDust();
+galaxyGroup.add(galaxyDust);
+
+// --- LIGHTS ---
+const ambient = new THREE.AmbientLight(0xffffff, 0.2); scene.add(ambient);
+const spot = new THREE.SpotLight(0xffeebb, 1.2); spot.position.set(0, 10, 5); spot.angle = Math.PI/3; spot.penumbra = 0.5; scene.add(spot);
+
+// --- CARDS ---
+const ringGroup = new THREE.Group(); ringGroup.position.y = -0.9; scene.add(ringGroup);
+const geoCard = new THREE.BoxGeometry(CONFIG.cardW, CONFIG.cardH, 0.04);
+const geoHalo = new THREE.PlaneGeometry(CONFIG.cardW * 1.3, CONFIG.cardH * 1.25);
+
+function initCards() {
+    while(ringGroup.children.length > 0) ringGroup.remove(ringGroup.children[0]);
+    STATE.cards = [];
+
+    for(let i=0; i<22; i++) {
+        const matSide = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.9 });
+        const matBack = new THREE.MeshStandardMaterial({ map: texBack, roughness: 0.7, metalness: 0.3 });
+        // Use Real Tarot Texture
+        const texFront = getRealTarotTexture(i);
+        const matFront = new THREE.MeshStandardMaterial({ map: texFront, roughness: 0.9, metalness: 0.1 });
+        
+        const mats = [matSide, matSide, matSide, matSide, matBack, matFront];
+        const card = new THREE.Mesh(geoCard, mats);
+        
+        const haloMat = new THREE.MeshBasicMaterial({ 
+            map: texHalo, color: CONFIG.colHalo, transparent: true, opacity: 0, 
+            depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide
+        });
+        const halo = new THREE.Mesh(geoHalo, haloMat);
+        halo.rotation.y = Math.PI; 
+        card.add(halo);
+        
+        card.userData = { id: i, frontTex: texFront, halo: haloMat };
+        ringGroup.add(card);
+        STATE.cards.push(card);
+    }
+    layoutRing(0);
+}
+function layoutRing(dur=0) {
+    const count = STATE.cards.length; const step = (Math.PI*2)/count;
+    STATE.cards.forEach((c, i) => {
+        const a = i*step; const tx = Math.sin(a)*CONFIG.radius; const tz = Math.cos(a)*CONFIG.radius;
+        const euler = new THREE.Euler(CONFIG.tiltAngle, a+Math.PI, 0); const quat = new THREE.Quaternion().setFromEuler(euler);
+        c.userData.basePos = new THREE.Vector3(tx,0,tz); c.userData.baseQuat = quat.clone();
+        if(dur===0) { c.position.copy(c.userData.basePos); c.quaternion.copy(quat); }
+        else { gsap.to(c.position, {x:tx, y:0, z:tz, duration:dur, ease:"power2.inOut"}); gsap.to(c.quaternion, {x:quat.x, y:quat.y, z:quat.z, w:quat.w, duration:dur, ease:"power2.inOut"}); }
+    });
+}
+initCards();
+
+// --- UPLOAD HANDLER ---
+const fileInput = document.getElementById('file-input');
+const uploadBtn = document.getElementById('upload-btn');
+fileInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if(!file) return;
+    uploadBtn.innerText = "LOADING...";
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+        const img = new Image();
+        img.onload = () => {
+            texBack = new THREE.Texture(img);
+            texBack.needsUpdate = true;
+            initCards();
+            uploadBtn.innerText = "✓ UPDATED";
+            setTimeout(() => uploadBtn.innerText = "+ Custom Card Back", 2000);
+        };
+        img.src = evt.target.result;
+    };
+    reader.readAsDataURL(file);
 });
 
-for(let i=0; i<CONFIG.cardCount; i++) {
-    const matFront = new THREE.MeshStandardMaterial({
-        map: createFrontTexture(i), roughness: 0.9
-    });
-    // Materials: R, L, T, B, Front(Z+), Back(Z-)
-    // 我们让 Z+ 是背面(朝内)，Z- 是正面(朝外，初始不可见)
-    // 修正：BoxGeometry 默认 Front 是 Z+。
-    // 我们希望初始看到的是背面。所以 Z+ 贴背面。
-    // Z- 贴正面。
-    const mats = [matSide, matSide, matSide, matSide, matBack, matFront];
-    
-    const card = new THREE.Mesh(geo, mats);
-    
-    // 数据结构
-    const angle = (i / CONFIG.cardCount) * Math.PI * 2;
-    card.userData = {
-        id: i,
-        angle: angle, // 逻辑角度
-        baseY: 0,
-        origScale: 1
-    };
-    
-    // 初始位置
-    updateCardPosition(card, angle);
-    card.lookAt(0, -1.2, 0); // 朝向圆心
-    
-    ringGroup.add(card);
-    STATE.cards.push(card);
-}
-
-function updateCardPosition(card, angle) {
-    card.position.x = Math.sin(angle) * CONFIG.radius;
-    card.position.z = Math.cos(angle) * CONFIG.radius;
-    card.rotation.y = angle + Math.PI; // 背面朝圆心
-}
-
-// 粒子系统 (预加载)
-const pCount = 2000;
-const pGeo = new THREE.BufferGeometry();
-const pPos = new Float32Array(pCount * 3);
-const pVel = new Float32Array(pCount * 3);
-const pLife = new Float32Array(pCount); // 0-1
-pGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
-pGeo.setAttribute('alpha', new THREE.BufferAttribute(pLife, 1));
-
-const pMat = new THREE.ShaderMaterial({
-    uniforms: {
-        tex: { value: createDustTexture() }
-    },
+// --- DISPERSION ---
+const dispersionMat = new THREE.ShaderMaterial({
+    uniforms: { uTime: {value:0}, uTex: {value:null} }, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
     vertexShader: `
-        attribute float alpha;
-        varying float vAlpha;
+        uniform float uTime; attribute vec3 aVelocity; varying vec2 vUv; varying float vAlpha;
         void main() {
-            vAlpha = alpha;
-            vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-            gl_PointSize = (10.0 / -mvPosition.z) * (0.5 + alpha);
+            vUv = uv; vec3 pos = position;
+            pos += aVelocity * uTime * 4.0; pos.y += uTime * 0.3;
+            vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
+            gl_PointSize = (15.0 / -mvPosition.z) * (1.0 - uTime*0.3);
             gl_Position = projectionMatrix * mvPosition;
+            vAlpha = 1.0 - smoothstep(1.5, 2.8, uTime);
         }
     `,
     fragmentShader: `
-        uniform sampler2D tex;
-        varying float vAlpha;
+        uniform sampler2D uTex; varying vec2 vUv; varying float vAlpha;
         void main() {
-            vec4 c = texture2D(tex, gl_PointCoord);
-            gl_FragColor = vec4(c.rgb, c.a * vAlpha);
+            vec4 c = texture2D(uTex, vUv); if(c.a < 0.1) discard;
+            if(length(gl_PointCoord-0.5)>0.5) discard;
+            vec3 col = mix(c.rgb, vec3(1.0, 0.9, 0.7), 0.3);
+            gl_FragColor = vec4(col, c.a * vAlpha * 0.8);
         }
-    `,
-    transparent: true,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending
+    `
 });
-const particleSystem = new THREE.Points(pGeo, pMat);
-particleSystem.visible = false;
-scene.add(particleSystem);
+const dispGeo = new THREE.BufferGeometry(); const dPos=[], dUv=[], dVel=[];
+for(let i=0; i<CONFIG.pCount; i++) {
+    dPos.push((Math.random()-0.5)*CONFIG.cardW, (Math.random()-0.5)*CONFIG.cardH, (Math.random()-0.5)*0.04);
+    dUv.push(Math.random(), Math.random());
+    const theta=Math.random()*Math.PI*2, phi=Math.acos(2*Math.random()-1), sp=0.1+Math.random()*0.4;
+    dVel.push(Math.sin(phi)*Math.cos(theta)*sp, Math.sin(phi)*Math.sin(theta)*sp, Math.cos(phi)*sp);
+}
+dispGeo.setAttribute('position', new THREE.Float32BufferAttribute(dPos,3));
+dispGeo.setAttribute('uv', new THREE.Float32BufferAttribute(dUv,2));
+dispGeo.setAttribute('aVelocity', new THREE.Float32BufferAttribute(dVel,3));
+const dispSys = new THREE.Points(dispGeo, dispersionMat); dispSys.visible=false; scene.add(dispSys);
 
-// Post Processing
-const composer = new THREE.EffectComposer(renderer);
-composer.addPass(new THREE.RenderPass(scene, camera));
+// ============================================================================
+// 3. LOGIC
+// ============================================================================
+const raycaster = new THREE.Raycaster(); const clock = new THREE.Clock();
+
+function getHandState(lm) {
+    const idx=lm[8], thb=lm[4], mid=lm[12];
+    const x=(1-idx.x)*2-1, y=(1-idx.y)*2-1;
+    const isFist = idx.y>lm[6].y && mid.y>lm[10].y && lm[16].y>lm[14].y;
+    const isPinch = Math.hypot(thb.x-idx.x, thb.y-idx.y) < CONFIG.pinchThresh;
+    const isPoint = idx.y<lm[6].y && mid.y>lm[10].y;
+    const isOpen = !isFist && !isPoint && !isPinch;
+    return { x, y, g: isFist?'FIST':(isPinch?'PINCH':(isPoint?'POINT':'OPEN')) };
+}
+
+function drawCard(card) {
+    if(STATE.mode===MODE.DRAWING) return;
+    STATE.mode = MODE.DRAWING; STATE.activeCard = card; STATE.activeCardTexture = card.userData.frontTex; STATE.hoverTarget = null;
+    
+    // Hide Halo
+    card.userData.halo.opacity = 0; 
+
+    const p=new THREE.Vector3(), q=new THREE.Quaternion(); card.getWorldPosition(p); card.getWorldQuaternion(q);
+    scene.attach(card); card.position.copy(p); card.quaternion.copy(q);
+    
+    const target = new THREE.Vector3(0, 0, -3.2); target.applyQuaternion(camera.quaternion).add(camera.position);
+    const targetQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, Math.PI, 0));
+
+    gsap.to(card.position, {x:target.x, y:target.y, z:target.z, duration:1.8, ease:"power2.inOut"});
+    gsap.to(card.quaternion, {x:targetQuat.x, y:targetQuat.y, z:targetQuat.z, w:targetQuat.w, duration:1.8, ease:"power2.inOut", onComplete:()=>{ STATE.mode=MODE.REVEAL_PAUSE; }});
+    gsap.delayedCall(2.4, ()=>{ if(STATE.mode===MODE.REVEAL_PAUSE) STATE.mode=MODE.REVEAL_FLOAT; });
+}
+
+function returnCard() {
+    if(STATE.mode!==MODE.REVEAL_FLOAT && STATE.mode!==MODE.REVEAL_PAUSE) return;
+    STATE.mode=MODE.RETURNING; const card = STATE.activeCard; ringGroup.attach(card);
+    gsap.to(card.position, {x:card.userData.basePos.x, y:card.userData.basePos.y, z:card.userData.basePos.z, duration:1.4, ease:"power2.inOut"});
+    gsap.to(card.quaternion, {x:card.userData.baseQuat.x, y:card.userData.baseQuat.y, z:card.userData.baseQuat.z, w:card.userData.baseQuat.w, duration:1.4, ease:"power2.inOut", onComplete:()=>{ STATE.mode=MODE.IDLE; STATE.activeCard=null; }});
+}
+
+function disperseCard() {
+    if(STATE.mode!==MODE.REVEAL_FLOAT) return;
+    STATE.mode=MODE.DISPERSE; const card = STATE.activeCard;
+    dispSys.position.copy(card.position); dispSys.quaternion.copy(card.quaternion);
+    dispSys.visible=true; dispersionMat.uniforms.uTex.value = STATE.activeCardTexture; dispersionMat.uniforms.uTime.value = 0;
+    card.visible=false; scene.remove(card);
+    const idx = STATE.cards.indexOf(card); if(idx>-1) STATE.cards.splice(idx,1); STATE.activeCard=null;
+    const o={t:0}; gsap.to(o, {t:CONFIG.dispersionTime, duration:CONFIG.dispersionTime, ease:"power1.out", onUpdate:()=>{ dispersionMat.uniforms.uTime.value=o.t; }, onComplete:()=>{ dispSys.visible=false; }});
+    setTimeout(()=>{ STATE.mode=MODE.REBALANCE; layoutRing(1.4); setTimeout(()=>{ STATE.mode=MODE.IDLE; }, 1400); }, 600);
+}
+
+// Loop
+const composer = new THREE.EffectComposer(renderer); composer.addPass(new THREE.RenderPass(scene, camera));
 const bloom = new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
-bloom.threshold = CONFIG.bloomThreshold;
-bloom.strength = CONFIG.bloomStrength;
-bloom.radius = CONFIG.bloomRadius;
-composer.addPass(bloom);
+bloom.threshold=0.15; bloom.strength=0.3; bloom.radius=0.6; composer.addPass(bloom);
+const cursor = new THREE.Mesh(new THREE.RingGeometry(0.015,0.025,32), new THREE.MeshBasicMaterial({color:0xaaaaaa, opacity:0.3, transparent:true})); scene.add(cursor);
 
-// 光标 (DEBUG/FEEDBACK)
-const cursor = new THREE.Mesh(
-    new THREE.RingGeometry(0.04, 0.05, 32),
-    new THREE.MeshBasicMaterial({ color: 0x8a7342, transparent: true, opacity: 0.3 })
-);
-scene.add(cursor);
+function updateLogic() {
+    galaxyGroup.rotation.y += 0.00003;
+    heroStars.material.uniforms.uTime.value = clock.getElapsedTime();
 
-// ============================================================================
-// 3. 核心逻辑：手势状态机 & 物理
-// ============================================================================
-const raycaster = new THREE.Raycaster();
+    const v = new THREE.Vector3(STATE.hand.x, STATE.hand.y, 0.5); v.unproject(camera);
+    cursor.position.copy(camera.position).add(v.sub(camera.position).normalize().multiplyScalar(3)); cursor.lookAt(camera.position);
 
-function updateLogic(dt) {
-    // 1. 平滑手部坐标
-    STATE.handX += (STATE.rawHandX - STATE.handX) * 0.15;
-    STATE.handY += (STATE.rawHandY - STATE.handY) * 0.15;
-
-    // 更新光标位置
-    const vec = new THREE.Vector3(STATE.handX, STATE.handY, 0.5);
-    vec.unproject(camera);
-    const dir = vec.sub(camera.position).normalize();
-    cursor.position.copy(camera.position).add(dir.multiplyScalar(4));
-    cursor.lookAt(camera.position);
-
-    // 2. 状态分发
-    switch (STATE.mode) {
-        case MODES.ORBIT:
-            handleOrbitMode();
+    switch(STATE.mode) {
+        case MODE.IDLE: case MODE.SCROLL:
+            if(STATE.hand.active && STATE.hand.gesture==='OPEN') { STATE.mode=MODE.SCROLL; if(Math.abs(STATE.hand.x)>0.15) STATE.rotVel-=STATE.hand.x*0.0003; } 
+            else STATE.mode=MODE.IDLE;
+            ringGroup.rotation.y+=STATE.rotVel; STATE.rotVel*=CONFIG.rotFriction;
+            if(STATE.hand.active && STATE.hand.gesture==='POINT') STATE.mode=MODE.BRAKING;
             break;
-        case MODES.BRAKING:
-        case MODES.HOVER:
-            handleInteraction(dt);
-            break;
-        case MODES.LOCKED:
-            // 等待动画触发
-            break;
-        case MODES.REVEAL:
-            handleRevealMode();
-            break;
-    }
-}
-
-function handleOrbitMode() {
-    // 惯性旋转
-    ringGroup.rotation.y += STATE.rotVel;
-    STATE.rotVel *= CONFIG.friction;
-
-    // 挥动检测：如果手在动，增加力矩
-    // 简单的手部 X 轴移动映射到旋转力
-    // 仅当手处于非中心位置时才算“拨动”
-    if (STATE.isHandActive && Math.abs(STATE.handX) > 0.3) {
-        STATE.rotVel -= (STATE.handX * 0.0005);
-    }
-
-    // 转换到 HOVER 检测
-    // 只有当食指伸出指向时 (我们用射线检测代替)
-    if (STATE.isHandActive) {
-        checkHover();
-        if (STATE.hoverTarget) {
-            STATE.mode = MODES.BRAKING; // 进入减速阶段
-        }
-    }
-}
-
-function handleInteraction(dt) {
-    // 阻尼逻辑：模拟手指压在转盘上
-    if (STATE.hoverTarget) {
-        STATE.rotVel *= CONFIG.hoverDrag; // 强力阻尼
-        ringGroup.rotation.y += STATE.rotVel;
-
-        // 如果速度足够低，进入完全 HOVER
-        if (Math.abs(STATE.rotVel) < 0.0005) {
-            STATE.mode = MODES.HOVER;
-            STATE.rotVel = 0;
-            // 此时圆环停止，高亮生效
-        }
-    } else {
-        // 丢失目标，回到 ORBIT
-        STATE.mode = MODES.ORBIT;
-    }
-
-    // 持续射线检测
-    checkHover();
-
-    // 捏合检测 (仅在 HOVER 且有目标时)
-    if (STATE.mode === MODES.HOVER && STATE.hoverTarget && isPinching()) {
-        const now = performance.now();
-        if (STATE.pinchStart === 0) STATE.pinchStart = now;
-        
-        if (now - STATE.pinchStart > CONFIG.pinchTime) {
-            // 捏合成功
-            triggerDraw(STATE.hoverTarget);
-        }
-    } else {
-        STATE.pinchStart = 0;
-    }
-}
-
-function handleRevealMode() {
-    // 握拳检测 -> 触发消散
-    if (isFist()) {
-        triggerDisperse();
-    }
-    
-    // 悬浮动画
-    if (STATE.selectedCard) {
-        const t = performance.now() * 0.001;
-        STATE.selectedCard.position.y += Math.sin(t) * 0.002;
-        STATE.selectedCard.rotation.z = Math.sin(t*0.5) * 0.05;
-    }
-}
-
-// 射线检测
-function checkHover() {
-    raycaster.setFromCamera({ x: STATE.handX, y: STATE.handY }, camera);
-    const intersects = raycaster.intersectObjects(STATE.cards);
-    
-    if (intersects.length > 0) {
-        const obj = intersects[0].object;
-        if (STATE.hoverTarget !== obj) {
-            // 切换目标
-            STATE.hoverTarget = obj;
-        }
-    } else {
-        STATE.hoverTarget = null;
-    }
-}
-
-// 手势辅助
-let _pinchDist = 1;
-let _fingerCurl = false;
-
-function isPinching() {
-    return _pinchDist < CONFIG.pinchThresh;
-}
-function isFist() {
-    return _fingerCurl;
-}
-
-// ============================================================================
-// 4. 关键动画序列 (GSAP)
-// ============================================================================
-
-function triggerDraw(card) {
-    if (STATE.mode === MODES.LOCKED) return;
-    STATE.mode = MODES.LOCKED;
-    STATE.selectedCard = card;
-
-    // 1. 坐标系转换：从 Group 拿出放入 Scene
-    const worldPos = new THREE.Vector3();
-    const worldQuat = new THREE.Quaternion();
-    card.getWorldPosition(worldPos);
-    card.getWorldQuaternion(worldQuat);
-    scene.attach(card); // 保持世界变换
-    
-    // 2. 动画
-    const tl = gsap.timeline({
-        onComplete: () => { STATE.mode = MODES.REVEAL; }
-    });
-
-    // 目标位置：相机正前方
-    const targetPos = new THREE.Vector3(0, 0, -2.5);
-    targetPos.applyQuaternion(camera.quaternion);
-    targetPos.add(camera.position);
-
-    // 飞来
-    tl.to(card.position, {
-        x: targetPos.x, y: targetPos.y, z: targetPos.z,
-        duration: 2.0, ease: "power3.inOut"
-    }, 0);
-
-    // 翻转 (Y轴转180度展示正面)
-    // 当前 rotation 是基于世界坐标的。我们需要它正面朝向相机。
-    // 简单做法：让它 LookAt 相机，然后修正 (因为我们正面材质是 Z-)
-    // 这里我们手动插值旋转
-    const targetRot = new THREE.Euler(0, Math.PI, 0); // 假定相机未大动
-    
-    tl.to(card.rotation, {
-        x: targetRot.x, y: targetRot.y, z: targetRot.z,
-        duration: 2.0, ease: "power2.inOut"
-    }, 0);
-
-    // Bloom 增强
-    tl.to(bloom, { strength: 2.5, duration: 1.0, yoyo: true, repeat: 1 }, 0.5);
-}
-
-function triggerDisperse() {
-    if (STATE.mode !== MODES.REVEAL) return;
-    STATE.mode = MODES.DISPERSE;
-
-    const card = STATE.selectedCard;
-    const center = card.position.clone();
-
-    // 1. 初始化粒子
-    particleSystem.visible = true;
-    const pos = pGeo.attributes.position.array;
-    const vel = pVel;
-    const life = pGeo.attributes.alpha.array;
-
-    for(let i=0; i<pCount; i++) {
-        // 在卡牌表面随机分布
-        pos[i*3] = center.x + (Math.random()-0.5)*1.4;
-        pos[i*3+1] = center.y + (Math.random()-0.5)*2.3;
-        pos[i*3+2] = center.z;
-        
-        // 缓慢扩散速度
-        vel[i*3] = (Math.random()-0.5) * 0.02;
-        vel[i*3+1] = (Math.random()-0.5) * 0.02;
-        vel[i*3+2] = (Math.random()) * 0.01; // 微微向后
-        
-        life[i] = 1.0;
-    }
-    pGeo.attributes.position.needsUpdate = true;
-    pGeo.attributes.alpha.needsUpdate = true;
-
-    // 2. 隐藏卡牌
-    card.visible = false;
-
-    // 3. 粒子动画循环由 animate 处理
-    
-    // 4. 2秒后开始补位
-    setTimeout(triggerRebalance, 1500);
-}
-
-function triggerRebalance() {
-    STATE.mode = MODES.REBALANCE;
-
-    // 从数组移除
-    const idx = STATE.cards.indexOf(STATE.selectedCard);
-    if (idx > -1) STATE.cards.splice(idx, 1);
-    
-    // 销毁旧卡牌 Mesh
-    scene.remove(STATE.selectedCard); // 真正移除
-    STATE.selectedCard = null;
-
-    // 计算剩余卡牌的新角度布局
-    const count = STATE.cards.length;
-    if (count === 0) return;
-
-    STATE.cards.forEach((c, i) => {
-        // 重新均匀分布
-        const newAngle = (i / count) * Math.PI * 2;
-        
-        // 我们动画 c.userData.angle，并在 update 中同步到 position
-        // 注意：要处理跨越 2PI 的情况 (这里简化处理，直接缓动)
-        gsap.to(c.userData, {
-            angle: newAngle,
-            duration: 2.5,
-            ease: "power2.inOut",
-            onUpdate: () => {
-                // 更新位置
-                c.position.x = Math.sin(c.userData.angle) * CONFIG.radius;
-                c.position.z = Math.cos(c.userData.angle) * CONFIG.radius;
-                c.rotation.y = c.userData.angle + Math.PI;
+        case MODE.BRAKING: case MODE.HOVER:
+            STATE.rotVel*=CONFIG.brakeFriction; ringGroup.rotation.y+=STATE.rotVel;
+            if(!STATE.hand.active || (STATE.hand.gesture!=='POINT'&&STATE.hand.gesture!=='PINCH')) { STATE.mode=MODE.IDLE; STATE.hoverTarget=null; }
+            else {
+                raycaster.setFromCamera({x:STATE.hand.x, y:STATE.hand.y}, camera); const hits = raycaster.intersectObjects(STATE.cards);
+                if(hits.length>0) {
+                    STATE.hoverTarget = hits[0].object; STATE.mode=MODE.HOVER;
+                    if(STATE.hand.gesture==='PINCH') { if(STATE.pinchStart===0) STATE.pinchStart=performance.now(); if(performance.now()-STATE.pinchStart>CONFIG.pinchTime) drawCard(STATE.hoverTarget); } else STATE.pinchStart=0;
+                } else { STATE.hoverTarget=null; STATE.pinchStart=0; }
             }
-        });
-    });
-
-    // 补位完成后回到 ORBIT
-    setTimeout(() => {
-        STATE.mode = MODES.ORBIT;
-        particleSystem.visible = false;
-        STATE.rotVel = 0.002;
-    }, 2600);
+            break;
+        case MODE.REVEAL_FLOAT: case MODE.REVEAL_PAUSE:
+            if(STATE.hand.active) { if(STATE.hand.gesture==='OPEN') returnCard(); else if(STATE.hand.gesture==='FIST') disperseCard(); }
+            break;
+    }
 }
-
-// ============================================================================
-// 5. 主循环
-// ============================================================================
-const clock = new THREE.Clock();
 
 function animate() {
     requestAnimationFrame(animate);
-    const dt = clock.getDelta();
-
-    // 逻辑更新
-    updateLogic(dt);
-
-    // 视觉反馈：卡牌高亮 (仅在非 DISPERSE 状态)
-    if (STATE.mode !== MODES.DISPERSE) {
-        STATE.cards.forEach(c => {
-            if (c === STATE.hoverTarget && STATE.mode !== MODES.ORBIT) {
-                // 柔和的暗金高亮
-                c.material[4].emissive.setHex(0x443311);
-                // 微微上浮
-                c.position.y = THREE.MathUtils.lerp(c.position.y, 0.3, 0.1);
-            } else {
-                c.material[4].emissive.setHex(0x000000);
-                c.position.y = THREE.MathUtils.lerp(c.position.y, 0, 0.1);
-            }
-        });
-    }
-
-    // 粒子更新
-    if (STATE.mode === MODES.DISPERSE || STATE.mode === MODES.REBALANCE) {
-        const pos = pGeo.attributes.position.array;
-        const vel = pVel;
-        const life = pGeo.attributes.alpha.array;
-        
-        for(let i=0; i<pCount; i++) {
-            if (life[i] > 0) {
-                pos[i*3] += vel[i*3];
-                pos[i*3+1] += vel[i*3+1];
-                pos[i*3+2] += vel[i*3+2];
-                life[i] -= 0.005 + Math.random()*0.005; // 随机衰减
-            }
+    STATE.hand.x += (STATE.rawHand.x - STATE.hand.x)*0.2; STATE.hand.y += (STATE.rawHand.y - STATE.hand.y)*0.2;
+    updateLogic();
+    const t = clock.getElapsedTime();
+    STATE.cards.forEach(c => {
+        // --- HALO FEEDBACK (No Light, Just Mesh) ---
+        if(STATE.mode===MODE.HOVER && c===STATE.hoverTarget) {
+            c.position.y = THREE.MathUtils.lerp(c.position.y, 0.25, 0.1);
+            c.userData.halo.opacity = THREE.MathUtils.lerp(c.userData.halo.opacity, 0.8 + 0.2*Math.sin(t*3), 0.1);
+        } else {
+            if(c!==STATE.activeCard) c.position.y = THREE.MathUtils.lerp(c.position.y, 0, 0.1);
+            c.userData.halo.opacity = THREE.MathUtils.lerp(c.userData.halo.opacity, 0, 0.2);
         }
-        pGeo.attributes.position.needsUpdate = true;
-        pGeo.attributes.alpha.needsUpdate = true;
-    }
-
+        if(c===STATE.activeCard && STATE.mode===MODE.REVEAL_FLOAT) { c.position.y += Math.sin(t)*0.0003; }
+    });
     composer.render();
 }
 animate();
 
-// ============================================================================
-// 6. MediaPipe Input
-// ============================================================================
-const videoEl = document.getElementById('video-input');
-const loader = document.getElementById('loader');
-
-const hands = new Hands({locateFile: (file) => 
-    `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
-
-hands.setOptions({
-    maxNumHands: 1,
-    modelComplexity: 1,
-    minDetectionConfidence: 0.7,
-    minTrackingConfidence: 0.7
-});
-
+const videoEl = document.getElementById('video-feed'); const loader = document.getElementById('loader');
+const hands = new Hands({locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`});
+hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.7, minTrackingConfidence: 0.7 });
 hands.onResults(res => {
     loader.style.opacity = 0;
-    if (res.multiHandLandmarks && res.multiHandLandmarks.length > 0) {
-        STATE.isHandActive = true;
-        const lm = res.multiHandLandmarks[0];
-        
-        // 坐标
-        const indexTip = lm[8];
-        STATE.rawHandX = (1 - indexTip.x) * 2 - 1;
-        STATE.rawHandY = (1 - indexTip.y) * 2 - 1;
-
-        // 捏合检测 (拇指尖-食指尖)
-        const thumbTip = lm[4];
-        _pinchDist = Math.hypot(indexTip.x - thumbTip.x, indexTip.y - thumbTip.y);
-
-        // 握拳检测 (指尖低于指根)
-        // 简单判定：食指、中指、无名指 Tip y > PIP y (MediaPipe y向下增大)
-        // 且拇指 Tip 靠近中指 PIP
-        const isFistState = (
-            lm[8].y > lm[6].y && // 食指弯曲
-            lm[12].y > lm[10].y && // 中指弯曲
-            lm[16].y > lm[14].y    // 无名指弯曲
-        );
-        _fingerCurl = isFistState;
-        
-    } else {
-        STATE.isHandActive = false;
-        _pinchDist = 1;
-        _fingerCurl = false;
-    }
+    if(res.multiHandLandmarks && res.multiHandLandmarks.length>0) {
+        const d = getHandState(res.multiHandLandmarks[0]);
+        STATE.rawHand.x = d.x; STATE.rawHand.y = d.y; STATE.hand.gesture = d.g; STATE.hand.active = true;
+    } else { STATE.hand.active = false; STATE.hand.gesture = 'NONE'; }
 });
-
-const cam = new Camera(videoEl, {
-    onFrame: async () => { await hands.send({image: videoEl}); },
-    width: 640, height: 480
-});
+const cam = new Camera(videoEl, { onFrame: async () => { await hands.send({image: videoEl}); }, width: 640, height: 480 });
 cam.start();
-
-// Resize
-window.addEventListener('resize', () => {
-    camera.aspect = window.innerWidth/window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    composer.setSize(window.innerWidth, window.innerHeight);
-});
-
+window.addEventListener('resize', () => { camera.aspect=window.innerWidth/window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); composer.setSize(window.innerWidth, window.innerHeight); });
 </script>
 </body>
 </html>
