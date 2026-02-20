@@ -1,24 +1,24 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>The True Tarot</title>
+    <title>The Book of Answers</title>
     <style>
-        body { margin: 0; overflow: hidden; background-color: #000000; font-family: 'Georgia', serif; }
+        body { margin: 0; overflow: hidden; background-color: #000000; font-family: 'Songti SC', 'SimSun', 'Times New Roman', serif; }
         canvas { display: block; }
         
         #loader {
             position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            color: #cba156; font-size: 11px; letter-spacing: 12px; pointer-events: none;
+            color: #cba156; font-size: 12px; letter-spacing: 10px; pointer-events: none;
             text-transform: uppercase; transition: opacity 1.5s; opacity: 1; 
             text-shadow: 0 0 40px rgba(200, 160, 80, 0.6);
-            font-weight: 300; border-bottom: 1px solid rgba(140, 123, 80, 0.2);
+            font-weight: 400; border-bottom: 1px solid rgba(140, 123, 80, 0.2);
             padding-bottom: 20px; z-index: 10;
         }
         #ui-help {
             position: absolute; bottom: 40px; width: 100%; text-align: center;
-            color: #6a7a8a; font-size: 9px; pointer-events: none; letter-spacing: 3px;
+            color: #6a7a8a; font-size: 10px; pointer-events: none; letter-spacing: 3px;
             opacity: 0.5; font-family: sans-serif; mix-blend-mode: screen; z-index: 10;
         }
         
@@ -47,13 +47,13 @@
 </head>
 <body>
 
-    <div id="loader">REVEALING ARCANA...</div>
+    <div id="loader">命 运 启 示 录 ...</div>
     <video id="video-feed" playsinline></video>
     <div id="ui-help">
-        OPEN: ORBIT • POINT: HALO • PINCH: DRAW • FIST: DISSOLVE
+        张手：流转 • 指向：选择 • 捏合：揭示 • 握拳：释怀
     </div>
 
-    <button id="upload-btn" onclick="document.getElementById('file-input').click()">+ Custom Card Back</button>
+    <button id="upload-btn" onclick="document.getElementById('file-input').click()">+ 上传自定义背面图</button>
     <input type="file" id="file-input" accept="image/*">
 
 <script>
@@ -73,21 +73,26 @@ const CONFIG = {
     colInk: '#0b0b0d', colPaper: '#e3dac9',
     
     // Galaxy Colors
-    colStarA: 0xeef0ff, // Core White
-    colStarB: 0x224488, // Deep Blue
-    colStarC: 0x110822  // Void Purple
+    colStarA: 0xeef0ff, colStarB: 0x224488, colStarC: 0x110822
 };
+
+// 答案库
+const ANSWERS = [
+    "现在还不是时候", "结果会让你惊讶", "保持现状", "听从你的直觉", 
+    "这绝对是好事", "也许你需要等待", "别再犹豫了", "毫无疑问", 
+    "你需要更多信息", "放手一搏", "专注于当下", "不要放弃", 
+    "这不值得", "你会后悔的", "这就是信号", "保持耐心", 
+    "重新考虑一下", "相信你自己", "有人在默默支持", "去问问朋友",
+    "你需要休息", "答案就在眼前"
+];
 
 const MODE = { IDLE: 'IDLE', SCROLL: 'SCROLL', BRAKING: 'BRAKING', HOVER: 'HOVER', DRAWING: 'DRAWING', REVEAL_PAUSE: 'REVEAL_PAUSE', REVEAL_FLOAT: 'REVEAL_FLOAT', RETURNING: 'RETURNING', DISPERSE: 'DISPERSE', REBALANCE: 'REBALANCE' };
 const STATE = { mode: MODE.IDLE, rotVel: 0.0001, hand: { x: 0, y: 0, active: false, gesture: 'NONE' }, rawHand: { x: 0, y: 0 }, hoverTarget: null, activeCard: null, activeCardTexture: null, pinchStart: 0, cards: [] };
 
 // ============================================================================
-// 1. TEXTURE ENGINE
+// 1. TEXTURE ENGINE (Western Etching Style)
 // ============================================================================
 
-const textureLoader = new THREE.TextureLoader();
-
-// A. SOFT STAR
 function createSoftCircleTexture() {
     const cvs = document.createElement('canvas'); cvs.width=32; cvs.height=32;
     const ctx = cvs.getContext('2d');
@@ -100,37 +105,29 @@ function createSoftCircleTexture() {
 }
 const texSoftCircle = createSoftCircleTexture();
 
-// B. HALO
-function createHaloTexture() {
-    const cvs = document.createElement('canvas'); cvs.width=256; cvs.height=256;
-    const ctx = cvs.getContext('2d');
-    ctx.shadowColor = "white"; ctx.shadowBlur = 60; ctx.fillStyle = "rgba(255,255,255,1)";
-    ctx.fillRect(50, 50, 156, 156);
-    ctx.globalCompositeOperation = 'destination-out';
-    ctx.shadowBlur = 0; ctx.fillRect(60, 60, 136, 136);
-    return new THREE.CanvasTexture(cvs);
-}
-const texHalo = createHaloTexture();
-
-// C. CARD BACK (Default High-Res)
-function createDefaultBackTexture() {
-    const cvs = document.createElement('canvas'); cvs.width=512; cvs.height=820;
-    const ctx = cvs.getContext('2d'); const w=512, h=820, cx=w/2, cy=h/2;
-    
-    // Base
-    ctx.fillStyle = CONFIG.colInk; ctx.fillRect(0,0,w,h);
-    // Noise
+// Drawing Utils
+function drawNoise(ctx, w, h, opacity=0.06) {
     const id = ctx.getImageData(0,0,w,h);
     for(let i=0; i<id.data.length; i+=4) {
-        const n = (Math.random()-0.5)*20;
+        const n = (Math.random()-0.5)*255*opacity;
         id.data[i]+=n; id.data[i+1]+=n; id.data[i+2]+=n;
     }
     ctx.putImageData(id,0,0);
-    
-    // Art
+}
+function drawVignette(ctx, w, h) {
+    const g = ctx.createRadialGradient(w/2, h/2, w/3, w/2, h/2, h*0.85);
+    g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(20,15,10,0.6)');
+    ctx.fillStyle = g; ctx.fillRect(0,0,w,h);
+}
+
+// 1.1 CARD BACK: Default (The Moth)
+function createDefaultBackTexture() {
+    const cvs = document.createElement('canvas'); cvs.width=512; cvs.height=820;
+    const ctx = cvs.getContext('2d'); const w=512, h=820, cx=w/2, cy=h/2;
+    ctx.fillStyle = CONFIG.colInk; ctx.fillRect(0,0,w,h);
+    drawNoise(ctx, w, h, 0.1); 
     ctx.strokeStyle = CONFIG.colGold; ctx.fillStyle = CONFIG.colGold; ctx.lineWidth = 2;
     ctx.strokeRect(20,20,w-40,h-40); ctx.lineWidth = 1; ctx.strokeRect(30,30,w-60,h-60);
-    
     ctx.save(); ctx.translate(cx, cy);
     ctx.lineWidth = 1;
     for(let i=0; i<60; i++) {
@@ -144,61 +141,103 @@ function createDefaultBackTexture() {
 }
 let texBack = createDefaultBackTexture();
 
-// D. CARD FRONT (REAL TAROT IMAGES)
-// Mapping index to Rider-Waite filenames
-const RWS_MAP = [
-    'm00', 'm01', 'm02', 'm03', 'm04', 'm05', 'm06', 'm07', 'm08', 'm09', 
-    'm10', 'm11', 'm12', 'm13', 'm14', 'm15', 'm16', 'm17', 'm18', 'm19', 'm20', 'm21'
-];
+// --- 1.2 CARD FRONT (Center Text Version) ---
+function createFrontTexture(idx) {
+    const cvs = document.createElement('canvas'); cvs.width=512; cvs.height=820;
+    const ctx = cvs.getContext('2d'); const w=512, h=820, cx=w/2, cy=h/2;
 
-function getRealTarotTexture(index) {
-    const filename = RWS_MAP[index % RWS_MAP.length];
-    const url = `https://raw.githubusercontent.com/t79/tarot-deck/master/img/${filename}.jpg`;
+    // 1. Aged Paper Background
+    ctx.fillStyle = CONFIG.colPaper; ctx.fillRect(0,0,w,h);
+    drawNoise(ctx, w, h, 0.06); 
+    drawVignette(ctx, w, h);
+
+    // 2. Art Nouveau Border
+    ctx.strokeStyle = '#1a1a1a'; ctx.lineWidth = 4;
+    ctx.strokeRect(35,35,w-70,h-70); // Main border
+    ctx.lineWidth = 1; ctx.strokeRect(42,42,w-84,h-84); // Inner hairline
     
-    // Create a placeholder canvas first
-    const cvs = document.createElement('canvas'); 
-    cvs.width = 512; cvs.height = 820;
-    const ctx = cvs.getContext('2d');
+    // Decorative Corners
+    const cs = 30; // corner size
+    ctx.fillStyle = '#1a1a1a';
+    ctx.beginPath(); ctx.moveTo(35,35); ctx.lineTo(35+cs,35); ctx.lineTo(35,35+cs); ctx.fill(); // TL
+    ctx.beginPath(); ctx.moveTo(w-35,35); ctx.lineTo(w-35-cs,35); ctx.lineTo(w-35,35+cs); ctx.fill(); // TR
+    ctx.beginPath(); ctx.moveTo(35,h-35); ctx.lineTo(35+cs,h-35); ctx.lineTo(35,h-35-cs); ctx.fill(); // BL
+    ctx.beginPath(); ctx.moveTo(w-35,h-35); ctx.lineTo(w-35-cs,h-35); ctx.lineTo(w-35,h-35-cs); ctx.fill(); // BR
+
+    // 3. Central Art (Classical Etchings - Lower Opacity/Behind Text)
+    ctx.save(); ctx.translate(cx, cy);
+    ctx.strokeStyle = 'rgba(15, 15, 18, 0.4)'; // Fainter stroke for background art
+    ctx.fillStyle = 'rgba(191, 166, 112, 0.3)'; // Fainter fill
+    ctx.lineWidth = 1.5;
+
+    const t = idx % 5; 
+    ctx.beginPath();
+
+    if (t === 0) { // THE WHEEL
+        ctx.arc(0,0,120,0,Math.PI*2); ctx.stroke();
+        for(let k=0; k<8; k++){ const a=(k/8)*Math.PI*2; ctx.moveTo(Math.cos(a)*30, Math.sin(a)*30); ctx.lineTo(Math.cos(a)*120, Math.sin(a)*120); }
+        ctx.stroke(); ctx.beginPath(); ctx.arc(0,0,30,0,Math.PI*2); ctx.fill();
+    } 
+    else if (t === 1) { // THE MOON
+        ctx.beginPath(); ctx.arc(0, 0, 100, 0.5, 5.8, true); 
+        ctx.bezierCurveTo(-25, -50, -25, 50, 0, 100); ctx.fill(); ctx.stroke();
+        ctx.lineWidth=1; for(let k=0; k<12; k++) { const a=(k/12)*Math.PI*2; ctx.moveTo(Math.cos(a)*110, Math.sin(a)*110); ctx.lineTo(Math.cos(a)*140, Math.sin(a)*140); } ctx.stroke();
+    }
+    else if (t === 2) { // THE HERMIT (Lamp)
+        ctx.moveTo(0,-90); ctx.lineTo(50,0); ctx.lineTo(0,90); ctx.lineTo(-50,0); ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.beginPath(); for(let k=0;k<6;k++){ const a=(k/6)*Math.PI*2; ctx.moveTo(0,0); ctx.lineTo(Math.cos(a)*25, Math.sin(a)*25); } ctx.stroke();
+    }
+    else if (t === 3) { // THE SUN
+        ctx.beginPath(); ctx.arc(0,0,70,0,Math.PI*2); ctx.fill(); ctx.stroke();
+        ctx.lineWidth=1; for(let k=0; k<16; k++){ const a=(k/16)*Math.PI*2; const r2=130; ctx.moveTo(Math.cos(a)*80, Math.sin(a)*80); ctx.lineTo(Math.cos(a)*r2, Math.sin(a)*r2); } ctx.stroke();
+    }
+    else { // SWORDS
+        ctx.beginPath(); ctx.moveTo(0,-160); ctx.lineTo(15,100); ctx.lineTo(0,130); ctx.lineTo(-15,100); ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(-50,-100); ctx.quadraticCurveTo(0,-60, 50,-100); ctx.quadraticCurveTo(0,-140, -50,-100); ctx.fill(); ctx.stroke();
+    }
+    ctx.restore();
+
+    // 4. CENTER TEXT (The Answer)
+    const text = ANSWERS[idx % ANSWERS.length];
     
-    // Draw base parchment while loading
-    ctx.fillStyle = CONFIG.colPaper; ctx.fillRect(0,0,512,820);
-    ctx.strokeStyle = '#1a1a1a'; ctx.lineWidth = 5; ctx.strokeRect(20,20,472,780);
+    ctx.save(); ctx.translate(cx, cy);
     
-    const tex = new THREE.CanvasTexture(cvs);
+    // Auto-scale text
+    let fontSize = 52;
+    if (text.length > 5) fontSize = 42;
+    if (text.length > 8) fontSize = 32;
     
-    // Load Real Image
-    const img = new Image();
-    img.crossOrigin = "Anonymous";
-    img.onload = () => {
-        // Draw image onto canvas with "High End" filter
-        ctx.drawImage(img, 0, 0, 512, 820);
-        
-        // Apply "Vintage Gold" Filter
-        ctx.globalCompositeOperation = 'multiply';
-        ctx.fillStyle = 'rgba(60, 40, 20, 0.3)'; // Sepia tint
-        ctx.fillRect(0,0,512,820);
-        
-        // Add Vignette
-        ctx.globalCompositeOperation = 'source-over';
-        const g = ctx.createRadialGradient(256, 410, 200, 256, 410, 600);
-        g.addColorStop(0, 'rgba(0,0,0,0)');
-        g.addColorStop(1, 'rgba(20,10,5,0.6)');
-        ctx.fillStyle = g;
-        ctx.fillRect(0,0,512,820);
-        
-        // Add Gold Border Overlay
-        ctx.strokeStyle = CONFIG.colGold; ctx.lineWidth = 8;
-        ctx.strokeRect(10,10,492,800);
-        
-        tex.needsUpdate = true;
-    };
-    img.src = url;
+    ctx.font = `bold ${fontSize}px "Songti SC", "SimSun", "Times New Roman", serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     
-    return tex;
+    // Halo Stroke effect to separate text from background art
+    ctx.strokeStyle = CONFIG.colPaper; ctx.lineWidth = 6; ctx.lineJoin = 'round';
+    ctx.strokeText(text, 0, 0);
+    
+    // Main Text
+    ctx.fillStyle = '#1a0b0b'; 
+    ctx.fillText(text, 0, 0);
+    
+    ctx.restore();
+
+    // 5. Roman Numeral Index (Top)
+    ctx.fillStyle = '#1a1a1a'; ctx.font = '20px serif'; ctx.textAlign='center';
+    ctx.fillText(["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"][idx%10], cx, 90);
+
+    // 6. Bottom Flourish
+    ctx.save(); ctx.translate(cx, h-90);
+    ctx.strokeStyle = '#1a1a1a'; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(-40, 0); ctx.bezierCurveTo(-20, 20, 20, -20, 40, 0);
+    ctx.moveTo(-40, 0); ctx.bezierCurveTo(-20, -20, 20, 20, 40, 0);
+    ctx.stroke();
+    ctx.restore();
+
+    return new THREE.CanvasTexture(cvs);
 }
 
 // ============================================================================
-// 2. SCENE SETUP
+// 2. SCENE
 // ============================================================================
 const scene = new THREE.Scene(); scene.background = new THREE.Color(CONFIG.bgColor);
 scene.fog = new THREE.FogExp2(CONFIG.bgColor, 0.005);
@@ -212,62 +251,44 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.0;
 document.body.appendChild(renderer.domElement);
 
-// --- GALAXY GROUP (Z=-12) ---
+// --- GALAXY ---
 const galaxyGroup = new THREE.Group();
 galaxyGroup.position.z = -12; 
 galaxyGroup.rotation.x = Math.PI * 0.4; 
 galaxyGroup.rotation.z = Math.PI * 0.1;
 scene.add(galaxyGroup);
 
-// --- STARS ---
+// Stars
 function createHeroStars() {
-    const count = 3500;
-    const geo = new THREE.BufferGeometry();
-    const pos = [];
-    const colors = [];
-    const sizes = [];
-
+    const count = 3500; const geo = new THREE.BufferGeometry(); const pos = []; const colors = []; const sizes = [];
     for(let i=0; i<count; i++) {
-        const radius = Math.random() * 200;
-        const spin = radius * 1.5;
-        const branches = 3;
+        const radius = Math.random() * 200; const spin = radius * 1.5; const branches = 3;
         const branchAngle = (i % branches) / branches * Math.PI * 2;
-        
         const x = Math.cos(branchAngle + spin) * radius + (Math.random()-0.5)*radius*0.6;
         const y = (Math.random()-0.5) * 20;
         const z = Math.sin(branchAngle + spin) * radius + (Math.random()-0.5)*radius*0.6;
         pos.push(x, y, z);
-
-        const c = new THREE.Color();
-        const r = Math.random();
-        if (r > 0.3) c.setHex(CONFIG.colStarA); 
-        else if (r > 0.15) c.setHex(CONFIG.colStarB); 
-        else c.setHex(CONFIG.colStarC); 
-        colors.push(c.r, c.g, c.b);
-        sizes.push(Math.random() * 0.5 + 0.2); 
+        const c = new THREE.Color(); const r = Math.random();
+        if (r > 0.3) c.setHex(CONFIG.colStarA); else if (r > 0.15) c.setHex(CONFIG.colStarB); else c.setHex(CONFIG.colStarC); 
+        colors.push(c.r, c.g, c.b); sizes.push(Math.random() * 0.5 + 0.2); 
     }
     geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
     geo.setAttribute('size', new THREE.Float32BufferAttribute(sizes, 1));
-
     const mat = new THREE.ShaderMaterial({
         uniforms: { uTime: { value: 0 }, uTex: { value: texSoftCircle } },
         vertexShader: `
             uniform float uTime; attribute float size; attribute vec3 color; varying vec3 vColor;
             void main() {
-                vColor = color;
-                vec3 p = position;
-                vec4 mv = modelViewMatrix * vec4(p, 1.0);
+                vColor = color; vec3 p = position; vec4 mv = modelViewMatrix * vec4(p, 1.0);
                 float twinkle = 0.85 + 0.3 * sin(uTime * 1.5 + p.x * 0.1);
-                gl_PointSize = size * (300.0 / -mv.z) * twinkle;
-                gl_Position = projectionMatrix * mv;
+                gl_PointSize = size * (300.0 / -mv.z) * twinkle; gl_Position = projectionMatrix * mv;
             }
         `,
         fragmentShader: `
             uniform sampler2D uTex; varying vec3 vColor;
             void main() {
-                vec4 tex = texture2D(uTex, gl_PointCoord);
-                if(tex.a < 0.1) discard;
+                vec4 tex = texture2D(uTex, gl_PointCoord); if(tex.a < 0.1) discard;
                 gl_FragColor = vec4(vColor, tex.a);
             }
         `,
@@ -275,26 +296,18 @@ function createHeroStars() {
     });
     return new THREE.Points(geo, mat);
 }
-const heroStars = createHeroStars();
-galaxyGroup.add(heroStars);
+const heroStars = createHeroStars(); galaxyGroup.add(heroStars);
 
-// --- DUST ---
+// Dust
 function createGalaxyDust() {
-    const count = 50000; 
-    const geo = new THREE.BufferGeometry();
-    const pos = [];
-    const colors = [];
+    const count = 50000; const geo = new THREE.BufferGeometry(); const pos = []; const colors = [];
     for(let i=0; i<count; i++) {
-        const radius = Math.random() * 220;
-        const spin = radius * 1.5;
-        const angle = (i % 3)/3 * Math.PI * 2;
+        const radius = Math.random() * 220; const spin = radius * 1.5; const angle = (i % 3)/3 * Math.PI * 2;
         const x = Math.cos(angle + spin) * radius + (Math.random()-0.5)*radius*0.8;
         const y = (Math.random()-0.5) * 40;
         const z = Math.sin(angle + spin) * radius + (Math.random()-0.5)*radius*0.8;
         pos.push(x, y, z);
-        const c = new THREE.Color(CONFIG.colStarB);
-        c.multiplyScalar(0.5); 
-        colors.push(c.r, c.g, c.b);
+        const c = new THREE.Color(CONFIG.colStarB); c.multiplyScalar(0.5); colors.push(c.r, c.g, c.b);
     }
     geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
@@ -304,8 +317,7 @@ function createGalaxyDust() {
     });
     return new THREE.Points(geo, mat);
 }
-const galaxyDust = createGalaxyDust();
-galaxyGroup.add(galaxyDust);
+const galaxyDust = createGalaxyDust(); galaxyGroup.add(galaxyDust);
 
 // --- LIGHTS ---
 const ambient = new THREE.AmbientLight(0xffffff, 0.2); scene.add(ambient);
@@ -314,31 +326,21 @@ const spot = new THREE.SpotLight(0xffeebb, 1.2); spot.position.set(0, 10, 5); sp
 // --- CARDS ---
 const ringGroup = new THREE.Group(); ringGroup.position.y = -0.9; scene.add(ringGroup);
 const geoCard = new THREE.BoxGeometry(CONFIG.cardW, CONFIG.cardH, 0.04);
-const geoHalo = new THREE.PlaneGeometry(CONFIG.cardW * 1.3, CONFIG.cardH * 1.25);
 
 function initCards() {
     while(ringGroup.children.length > 0) ringGroup.remove(ringGroup.children[0]);
     STATE.cards = [];
 
-    for(let i=0; i<22; i++) {
+    for(let i=0; i<20; i++) { // 20 answers
         const matSide = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.9 });
         const matBack = new THREE.MeshStandardMaterial({ map: texBack, roughness: 0.7, metalness: 0.3 });
-        // Use Real Tarot Texture
-        const texFront = getRealTarotTexture(i);
+        const texFront = createFrontTexture(i);
         const matFront = new THREE.MeshStandardMaterial({ map: texFront, roughness: 0.9, metalness: 0.1 });
         
         const mats = [matSide, matSide, matSide, matSide, matBack, matFront];
         const card = new THREE.Mesh(geoCard, mats);
         
-        const haloMat = new THREE.MeshBasicMaterial({ 
-            map: texHalo, color: CONFIG.colHalo, transparent: true, opacity: 0, 
-            depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide
-        });
-        const halo = new THREE.Mesh(geoHalo, haloMat);
-        halo.rotation.y = Math.PI; 
-        card.add(halo);
-        
-        card.userData = { id: i, frontTex: texFront, halo: haloMat };
+        card.userData = { id: i, frontTex: texFront };
         ringGroup.add(card);
         STATE.cards.push(card);
     }
@@ -356,13 +358,13 @@ function layoutRing(dur=0) {
 }
 initCards();
 
-// --- UPLOAD HANDLER ---
+// --- IMAGE UPLOAD ---
 const fileInput = document.getElementById('file-input');
 const uploadBtn = document.getElementById('upload-btn');
 fileInput.addEventListener('change', (e) => {
     const file = e.target.files[0];
     if(!file) return;
-    uploadBtn.innerText = "LOADING...";
+    uploadBtn.innerText = "读取中...";
     const reader = new FileReader();
     reader.onload = (evt) => {
         const img = new Image();
@@ -370,8 +372,8 @@ fileInput.addEventListener('change', (e) => {
             texBack = new THREE.Texture(img);
             texBack.needsUpdate = true;
             initCards();
-            uploadBtn.innerText = "✓ UPDATED";
-            setTimeout(() => uploadBtn.innerText = "+ Custom Card Back", 2000);
+            uploadBtn.innerText = "✓ 更新成功";
+            setTimeout(() => uploadBtn.innerText = "+ 上传自定义背面图", 2000);
         };
         img.src = evt.target.result;
     };
@@ -433,9 +435,6 @@ function drawCard(card) {
     if(STATE.mode===MODE.DRAWING) return;
     STATE.mode = MODE.DRAWING; STATE.activeCard = card; STATE.activeCardTexture = card.userData.frontTex; STATE.hoverTarget = null;
     
-    // Hide Halo
-    card.userData.halo.opacity = 0; 
-
     const p=new THREE.Vector3(), q=new THREE.Quaternion(); card.getWorldPosition(p); card.getWorldQuaternion(q);
     scene.attach(card); card.position.copy(p); card.quaternion.copy(q);
     
@@ -508,13 +507,11 @@ function animate() {
     updateLogic();
     const t = clock.getElapsedTime();
     STATE.cards.forEach(c => {
-        // --- HALO FEEDBACK (No Light, Just Mesh) ---
+        // --- UPDATED: JUST LIFT, NO HALO ---
         if(STATE.mode===MODE.HOVER && c===STATE.hoverTarget) {
             c.position.y = THREE.MathUtils.lerp(c.position.y, 0.25, 0.1);
-            c.userData.halo.opacity = THREE.MathUtils.lerp(c.userData.halo.opacity, 0.8 + 0.2*Math.sin(t*3), 0.1);
         } else {
             if(c!==STATE.activeCard) c.position.y = THREE.MathUtils.lerp(c.position.y, 0, 0.1);
-            c.userData.halo.opacity = THREE.MathUtils.lerp(c.userData.halo.opacity, 0, 0.2);
         }
         if(c===STATE.activeCard && STATE.mode===MODE.REVEAL_FLOAT) { c.position.y += Math.sin(t)*0.0003; }
     });
